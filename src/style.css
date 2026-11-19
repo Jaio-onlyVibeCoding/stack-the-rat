@@ -284,7 +284,7 @@ input { width: 100%; }
 .history-bar .bar-head { flex: 1; }
 .last { flex: 1; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .log {
-  list-style: none; margin: 0; padding: 8px 12px; max-height: 34dvh; overflow-y: auto;
+  list-style: none; margin: 0; padding: 8px 12px; max-height: 26dvh; overflow-y: auto;
   border-bottom: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px;
 }
 .log time { color: var(--muted); font-variant-numeric: tabular-nums; margin-inline-end: 6px; }
@@ -307,7 +307,7 @@ input { width: 100%; }
 }
 
 /* ---------- Pannelli: esilio e cimiteri, uno sotto l'altro nell'ordine di apertura ---------- */
-.panels { display: grid; gap: 6px; flex: none; max-height: 46dvh; overflow-y: auto; }
+.panels { display: grid; gap: 6px; flex: none; max-height: 34dvh; overflow-y: auto; }
 .panel {
   border: 1px solid color-mix(in srgb, var(--pc) 50%, var(--line)); border-radius: 12px;
   background: color-mix(in srgb, var(--pc) 8%, var(--panel));
