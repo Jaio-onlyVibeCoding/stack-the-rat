@@ -429,3 +429,7 @@ input { width: 100%; }
 .ability-options .generic { color: var(--muted); font-style: italic; }
 .menu button { display: flex; align-items: center; gap: 8px; }
 .menu button:disabled { opacity: .35; cursor: default; }
+/* colonna della pila stretta (telefono in verticale): niente illustrazione, più spazio al testo */
+@container (max-width: 200px) {
+  .pile-card .ability-art { display: none; }
+}
