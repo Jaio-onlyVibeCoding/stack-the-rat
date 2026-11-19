@@ -6,16 +6,27 @@ import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   PLAYER_COLOR,
+  initialGame,
+  isLegal,
   newUid,
   objKey,
-  type Permanent,
+  relocate,
+  type CardObj,
+  type Destination,
+  type Game,
   type PlayerId,
   type StackItem,
 } from './game';
 import { LANGS, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
 import type { Card } from './scryfall';
+import { decodeGame, encodeGame, sharedCodeFromUrl, shareUrl } from './share';
 
 // ---------- Icone ----------
+const Icon = ({ d, size = 22 }: { d: string; size?: number }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" class="icon">
+    <path d={d} />
+  </svg>
+);
 const Crosshair = () => (
   <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="icon">
     <circle cx="12" cy="12" r="7" />
@@ -23,112 +34,69 @@ const Crosshair = () => (
     <path d="M12 1v5M12 18v5M1 12h5M18 12h5" />
   </svg>
 );
-const Cross = () => (
-  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="icon">
-    <path d="M5 5l14 14M19 5L5 19" />
-  </svg>
-);
-const Tomb = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="icon">
-    <path d="M6 21V10a6 6 0 0 1 12 0v11zM4 21h16M12 9v6M9.5 11.5h5" />
-  </svg>
-);
-const Portal = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="icon">
+const Portal = ({ size = 20 }: { size?: number }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" class="icon">
     <ellipse cx="12" cy="12" rx="5" ry="9" />
     <path d="M3 12h9M9 9l3 3-3 3" />
   </svg>
 );
-const UndoIcon = () => (
-  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="icon">
-    <path d="M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3" />
-  </svg>
-);
-const Chevron = ({ up }: { up: boolean }) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" class="icon">
-    <path d={up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
-  </svg>
-);
+const CROSS = 'M5 5l14 14M19 5L5 19';
+const BACK = 'M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3';
+const FORWARD = 'M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h3';
+const SHARE = 'M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6';
+const chevron = (up: boolean) => (up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6');
 
-// ---------- Stato della partita ----------
-interface Exiled {
-  uid: number;
-  card: Card;
-  owner: PlayerId;
-}
-
-/** Tutto ciò che "Annulla" può riportare indietro. */
-interface Game {
-  players: PlayerId[];
-  /** giocatore attivo (di chi è il turno) */
-  active: PlayerId;
-  /** chi ha la priorità; null = nessuno (durante la risoluzione) */
-  priority: PlayerId | null;
-  /** giocatori che hanno passato di fila (CR 117.4) */
-  passed: PlayerId[];
-  stack: StackItem[];
-  perms: Permanent[];
-  graveyards: Record<PlayerId, Card[]>;
-  exile: Exiled[];
-  /** oggetti che hanno cambiato zona: chiave vecchia → dove sono finiti (gy:X o exile) */
-  gone: Record<string, string>;
-  /** oggetto in risoluzione */
-  resolving: number | null;
-}
-
-const initialGame = (): Game => ({
-  players: ['A', 'B'],
-  active: 'A',
-  priority: 'A',
-  passed: [],
-  stack: [],
-  perms: [],
-  graveyards: { A: [], B: [], C: [], D: [] },
-  exile: [],
-  gone: {},
-  resolving: null,
-});
-
-interface LogEntry {
-  id: number;
-  text: string;
+/** Una "condizione" della partita: lo stato e i messaggi che l'hanno prodotta. */
+interface Snapshot {
+  game: Game;
+  messages: string[];
   time: string;
-}
-
-/** Un bersaglio è legale se esiste ancora (le altre condizioni le valuta il giocatore). */
-function isLegal(g: Game, key: string): boolean {
-  const [kind, id] = key.split(':');
-  if (kind === 'player') return g.players.includes(id as PlayerId);
-  if (kind === 'perm') return g.perms.some((p) => p.uid === Number(id));
-  if (kind === 'stack') return g.stack.some((x) => x.uid === Number(id));
-  return false;
-}
-
-/** Una carta che cambia zona diventa un nuovo oggetto (CR 400.7): i bersagli che la puntavano diventano illegali. */
-function moveTo(g: Game, card: Card, owner: PlayerId, oldKey: string | null, zone: 'gy' | 'exile'): Game {
-  const gone = oldKey ? { ...g.gone, [oldKey]: zone === 'gy' ? `gy:${owner}` : 'exile' } : g.gone;
-  if (zone === 'gy') return { ...g, gone, graveyards: { ...g.graveyards, [owner]: [...g.graveyards[owner], card] } };
-  return { ...g, gone, exile: [...g.exile, { uid: newUid(), card, owner }] };
 }
 
 const fill = (text: string, vars: Record<string, string>) =>
   text.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? '');
 
+const DESTINATIONS: Destination[] = ['battlefield', 'graveyard', 'exile', 'stack'];
+const HISTORY_LIMIT = 200;
+
 export function App() {
   const { t, lang } = useI18n();
-  const [game, setGame] = useState<Game>(initialGame);
-  const [past, setPast] = useState<Game[]>([]);
-  const [log, setLog] = useState<LogEntry[]>([]);
+  const now = () => new Date().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+  const tr = (k: Key, vars: Record<string, string> = {}) => fill(t(k), vars);
+
+  // Cronologia delle condizioni: ci si muove avanti e indietro con pos
+  const [timeline, setTimeline] = useState<Snapshot[]>(() => [{ game: initialGame(), messages: [], time: now() }]);
+  const [pos, setPos] = useState(0);
+  const g = timeline[pos].game;
+
+  // Stato dell'interfaccia (non fa parte della cronologia)
   const [preview, setPreview] = useState<Card | null>(null);
-  /** uid dell'oggetto in pila che sta scegliendo i bersagli (null = nessuno) */
   const [targeting, setTargeting] = useState<number | null>(null);
-  const [exileOpen, setExileOpen] = useState(false);
+  const [panels, setPanels] = useState<string[]>([]); // 'exile' | 'gy:A' ... nell'ordine di apertura
+  const [menu, setMenu] = useState<{ uid: number; x: number; y: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [share, setShare] = useState<{ url: string; copied: boolean } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const stackCol = useRef<HTMLElement>(null);
 
-  const g = game;
-  const tr = (k: Key, vars: Record<string, string> = {}) => fill(t(k), vars);
+  // Apertura di un setup condiviso (#s=...)
+  useEffect(() => {
+    const code = sharedCodeFromUrl();
+    if (!code) return;
+    setNotice(t('sharedLoading'));
+    decodeGame(code)
+      .then((game) => {
+        setTimeline([{ game, messages: [t('sharedLoaded')], time: now() }]);
+        setPos(0);
+        setNotice(null);
+      })
+      .catch(() => {
+        setNotice(t('sharedError'));
+        setTimeout(() => setNotice(null), 5000);
+      })
+      .finally(() => history.replaceState(null, '', location.pathname));
+  }, []);
 
   // Quando entra un nuovo oggetto in pila, scorri fino alla cima della pila (in basso)
   useEffect(() => {
@@ -136,39 +104,48 @@ export function App() {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [g.stack.length]);
 
-  // Breve evidenziazione della barra storico a ogni nuovo messaggio
+  // Breve evidenziazione della barra storico quando cambia la condizione
   useEffect(() => {
-    if (!log.length) return;
     setFlash(true);
-    const id = setTimeout(() => setFlash(false), 1200);
+    const id = setTimeout(() => setFlash(false), 1000);
     return () => clearTimeout(id);
-  }, [log.length]);
+  }, [pos, timeline.length]);
 
-  function addLog(...texts: string[]) {
-    const time = new Date().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
-    setLog((l) => [...l, ...texts.map((text) => ({ id: newUid(), text, time }))]);
-  }
-
-  /** Applica una nuova versione della partita, ricordando la precedente per "Annulla". */
+  /** Nuova condizione: cancella le condizioni "future" e aggiunge questa in fondo. */
   function commit(next: Game, ...messages: string[]) {
-    setPast((p) => [...p.slice(-99), g]);
-    setGame(next);
-    if (messages.length) addLog(...messages);
+    const tl = [...timeline.slice(0, pos + 1), { game: next, messages, time: now() }].slice(-HISTORY_LIMIT);
+    setTimeline(tl);
+    setPos(tl.length - 1);
   }
-
-  function undo() {
-    const prev = past[past.length - 1];
-    if (!prev) return;
-    setPast((p) => p.slice(0, -1));
-    setGame(prev);
+  function goTo(i: number) {
+    if (i < 0 || i >= timeline.length) return;
+    setPos(i);
     setTargeting(null);
-    addLog(t('undone'));
+    setMenu(null);
   }
 
   const isFallback = preview && lang !== 'en' && preview.lang !== langInfo(lang).scryfall;
   const sourceIndex = g.stack.findIndex((s) => s.uid === targeting);
   const resolvingItem = g.stack.find((s) => s.uid === g.resolving) ?? null;
   const nextPlayer = (p: PlayerId) => g.players[(g.players.indexOf(p) + 1) % g.players.length];
+  const graveyard = (p: PlayerId) => g.objs.filter((o) => o.zone === 'graveyard' && o.owner === p);
+  const exile = g.objs.filter((o) => o.zone === 'exile');
+
+  function labelOf(key: string): string {
+    const [kind, id] = key.split(':');
+    if (kind === 'player') return `${t('player')} ${id}`;
+    const n = Number(id);
+    if (kind === 'stack') return g.stack.find((x) => x.uid === n)?.card.printedName ?? '?';
+    return g.objs.find((o) => o.uid === n)?.card.printedName ?? '?';
+  }
+  function whereLabel(dest: Destination, p: PlayerId): string {
+    if (dest === 'battlefield') return tr('battlefieldOf', { p });
+    if (dest === 'graveyard') return tr('graveyardOf', { p });
+    if (dest === 'exile') return t('exileZone');
+    return t('stackZone');
+  }
+  const destName = (d: Destination) =>
+    d === 'battlefield' ? t('battlefield') : d === 'graveyard' ? t('graveyard') : d === 'exile' ? t('exile') : t('stack');
 
   // ---- Giocatori ----
   function addPlayer() {
@@ -179,19 +156,20 @@ export function App() {
   function removePlayer() {
     if (g.players.length <= MIN_PLAYERS) return;
     const gone = g.players[g.players.length - 1];
-    const keepFirst = g.active === gone || g.priority === gone;
+    const reset = g.active === gone || g.priority === gone;
     commit(
       {
         ...g,
         players: g.players.slice(0, -1),
-        perms: g.perms.filter((x) => x.controller !== gone),
+        objs: g.objs.filter((o) => o.controller !== gone && o.owner !== gone),
         stack: g.stack.filter((x) => x.controller !== gone),
         passed: [],
-        active: keepFirst ? 'A' : g.active,
-        priority: g.resolving !== null ? null : keepFirst ? 'A' : g.priority,
+        active: reset ? 'A' : g.active,
+        priority: g.resolving !== null ? null : reset ? 'A' : g.priority,
       },
       tr('logRemovePlayer', { p: gone }),
     );
+    setPanels((ps) => ps.filter((x) => x !== `gy:${gone}`));
     setTargeting(null);
   }
   function changeActive(p: PlayerId) {
@@ -206,7 +184,7 @@ export function App() {
     commit(
       {
         ...g,
-        stack: [...g.stack, { uid: newUid(), card: preview, controller, targets: [] }],
+        stack: [...g.stack, { uid: newUid(), card: preview, owner: controller, controller, targets: [] }],
         priority: controller,
         passed: [],
       },
@@ -217,17 +195,34 @@ export function App() {
   function putOnBattlefield(controller: PlayerId) {
     if (!preview) return;
     commit(
-      { ...g, perms: [...g.perms, { uid: newUid(), card: preview, controller }] },
+      { ...g, objs: [...g.objs, { uid: newUid(), card: preview, owner: controller, controller, zone: 'battlefield' }] },
       tr('logBattlefield', { p: controller, card: preview.printedName }),
     );
     setPreview(null);
   }
-  function permanentTo(p: Permanent, zone: 'gy' | 'exile') {
-    const base = { ...g, perms: g.perms.filter((x) => x.uid !== p.uid) };
+  function moveObj(o: CardObj, dest: Destination) {
+    const { game, tokenGone } = relocate(g, { kind: 'obj', obj: o }, dest);
+    let next = game;
+    const holder = o.zone === 'battlefield' ? o.controller : o.owner;
+    // Mettere una carta in pila dà la priorità a chi la controlla (salvo durante una risoluzione)
+    if (dest === 'stack' && !tokenGone && g.resolving === null) next = { ...next, priority: holder, passed: [] };
+    const card = o.card.printedName;
+    const msgs = [tr('logMove', { card, where: whereLabel(dest, dest === 'battlefield' ? holder : o.owner) })];
+    if (tokenGone) msgs.push(tr('logTokenGone', { card }));
+    commit(next, ...msgs);
+  }
+  function tokenCopy(o: CardObj) {
+    const controller = o.zone === 'battlefield' ? o.controller : o.owner;
     commit(
-      moveTo(base, p.card, p.controller, objKey.perm(p.uid), zone),
-      tr(zone === 'gy' ? 'logGraveyard' : 'logExile', { p: p.controller, card: p.card.printedName }),
+      {
+        ...g,
+        objs: [...g.objs, { uid: newUid(), card: o.card, owner: controller, controller, zone: 'battlefield', token: true }],
+      },
+      tr('logToken', { p: controller, card: o.card.printedName }),
     );
+  }
+  function removeObj(o: CardObj) {
+    commit({ ...g, objs: g.objs.filter((x) => x.uid !== o.uid) }, tr('logRemoveCard', { card: o.card.printedName }));
   }
   function removeFromStack(it: StackItem) {
     const wasResolving = g.resolving === it.uid;
@@ -264,8 +259,8 @@ export function App() {
     const name = top.card.printedName;
     const legal = top.targets.filter((k) => isLegal(g, k));
     if (top.targets.length > 0 && legal.length === 0) {
-      const base = { ...g, stack: g.stack.slice(0, -1), passed: [], priority: g.active };
-      commit(moveTo(base, top.card, top.controller, objKey.stack(top.uid), 'gy'), passMsg, tr('fizzled', { card: name }));
+      const { game } = relocate(g, { kind: 'stack', item: top }, 'graveyard');
+      commit({ ...game, passed: [], priority: g.active }, passMsg, tr('fizzled', { card: name }));
       return;
     }
     const msgs = [passMsg, tr('resolvingStart', { card: name })];
@@ -279,28 +274,17 @@ export function App() {
   function finishResolution() {
     const it = resolvingItem;
     if (!it) return;
-    const base: Game = {
-      ...g,
-      stack: g.stack.filter((x) => x.uid !== it.uid),
-      resolving: null,
-      priority: g.active,
-      passed: [],
-    };
-    const name = it.card.printedName;
-    if (it.card.isPermanent) {
-      // CR 608.3: una magia permanente entra sul campo del suo controllore
-      commit(
-        { ...base, perms: [...base.perms, { uid: newUid(), card: it.card, controller: it.controller }] },
-        tr('resolvedPermanent', { card: name }),
-      );
-    } else {
-      // CR 608.2n: istantaneo o stregoneria va nel cimitero
-      commit(moveTo(base, it.card, it.controller, objKey.stack(it.uid), 'gy'), tr('resolved', { card: name }));
-    }
+    // CR 608.3: una magia permanente entra sul campo; CR 608.2n: istantaneo/stregoneria va al cimitero
+    const dest = it.card.isPermanent ? 'battlefield' : 'graveyard';
+    const { game } = relocate(g, { kind: 'stack', item: it }, dest);
+    commit(
+      { ...game, resolving: null, priority: g.active, passed: [] },
+      tr(dest === 'battlefield' ? 'resolvedPermanent' : 'resolved', { card: it.card.printedName }),
+    );
   }
 
   // ---- Bersagli ----
-  /** Una magia/abilità può bersagliare giocatori, permanenti e oggetti già in pila sotto di lei (CR 115.5). */
+  /** Una magia/abilità può bersagliare giocatori, carte e oggetti già in pila sotto di lei (CR 115.5). */
   function canTarget(key: string): boolean {
     if (targeting === null) return false;
     if (key.startsWith('stack:')) {
@@ -311,20 +295,27 @@ export function App() {
   }
   function onObjectTap(key: string) {
     if (!canTarget(key)) return;
-    commit({
-      ...g,
-      stack: g.stack.map((it) =>
-        it.uid !== targeting
-          ? it
-          : { ...it, targets: it.targets.includes(key) ? it.targets.filter((k) => k !== key) : [...it.targets, key] },
-      ),
-    });
+    const src = g.stack.find((x) => x.uid === targeting);
+    if (!src) return;
+    const had = src.targets.includes(key);
+    commit(
+      {
+        ...g,
+        stack: g.stack.map((it) =>
+          it.uid !== src.uid ? it : { ...it, targets: had ? it.targets.filter((k) => k !== key) : [...it.targets, key] },
+        ),
+      },
+      tr(had ? 'logUntarget' : 'logTarget', { card: src.card.printedName, target: labelOf(key) }),
+    );
   }
   function onTargetButton(item: StackItem) {
     if (targeting === item.uid || item.targets.length > 0) {
       // Icona X: cancella tutte le frecce di questo oggetto
       if (item.targets.length) {
-        commit({ ...g, stack: g.stack.map((it) => (it.uid === item.uid ? { ...it, targets: [] } : it)) });
+        commit(
+          { ...g, stack: g.stack.map((it) => (it.uid === item.uid ? { ...it, targets: [] } : it)) },
+          tr('logClearTargets', { card: item.card.printedName }),
+        );
       }
       setTargeting(null);
     } else {
@@ -336,13 +327,21 @@ export function App() {
     if (!(e.target as Element).closest('[data-obj], .tgt')) setTargeting(null);
   }
 
+  /** Dove agganciare una freccia se la carta bersaglio non è visibile (pannello chiuso). */
+  function zoneAnchor(key: string): string | undefined {
+    if (!key.startsWith('card:')) return undefined;
+    const o = g.objs.find((x) => x.uid === Number(key.slice(5)));
+    if (!o) return undefined;
+    return o.zone === 'graveyard' ? `gy:${o.owner}` : 'exile';
+  }
+
   const links: Link[] = g.stack.flatMap((it) =>
     it.targets.map((to) => {
       const illegal = !isLegal(g, to);
       return {
         from: objKey.stack(it.uid),
         to,
-        fallback: g.gone[to],
+        fallback: g.gone[to] ?? zoneAnchor(to),
         color: illegal ? '#e06c5a' : PLAYER_COLOR[it.controller],
         illegal,
       };
@@ -355,19 +354,68 @@ export function App() {
     onClick: () => onObjectTap(key),
   });
 
-  const lastMessage = log[log.length - 1];
+  // ---- Pannelli (esilio, cimiteri): non fanno parte dello storico ----
+  const togglePanel = (id: string) => setPanels((ps) => (ps.includes(id) ? ps.filter((x) => x !== id) : [...ps, id]));
+
+  function openMenu(uid: number, e: MouseEvent) {
+    e.stopPropagation();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setMenu({ uid, x: r.right, y: r.bottom });
+  }
+
+  // ---- Condivisione ----
+  async function openShare() {
+    try {
+      setShare({ url: shareUrl(await encodeGame(g)), copied: false });
+    } catch {
+      setShare({ url: '', copied: false });
+    }
+  }
+  async function copyShare() {
+    if (!share?.url) return;
+    try {
+      await navigator.clipboard.writeText(share.url);
+      setShare({ ...share, copied: true });
+    } catch {
+      (document.getElementById('share-url') as HTMLInputElement | null)?.select();
+    }
+  }
+  async function nativeShare() {
+    if (!share?.url) return;
+    try {
+      await navigator.share({ title: 'Stack The Rat', url: share.url });
+    } catch {}
+  }
+
+  /** Carta sul campo, nel cimitero o in esilio, con il menu ⋯ */
+  const renderTile = (o: CardObj, cls: string) => (
+    <div key={o.uid} {...objProps(objKey.of(o), cls)} style={{ '--pc': PLAYER_COLOR[o.owner] }}>
+      {o.card.image ? <img src={o.card.image} alt={o.card.printedName} /> : <span class="no-img">{o.card.printedName}</span>}
+      {o.token && <span class="token-tag">{t('token')}</span>}
+      {cls === 'tile' && <span class="owner-tag">{o.owner}</span>}
+      <button type="button" class="more" aria-label={`${t('menu')}: ${o.card.printedName}`} onClick={(e) => openMenu(o.uid, e)}>
+        ⋯
+      </button>
+    </div>
+  );
+
+  // Storico: tutti i messaggi, il più recente in alto; quelli "futuri" (dopo pos) appaiono attenuati
+  const entries = timeline.flatMap((s, i) => s.messages.map((text, j) => ({ i, j, text, time: s.time })));
+  const currentMessage = timeline[pos].messages[timeline[pos].messages.length - 1] ?? '';
+  const menuObj = menu ? g.objs.find((o) => o.uid === menu.uid) : undefined;
 
   return (
     <main class={`shell${targeting !== null ? ' targeting' : ''}`} onClick={onBackgroundTap}>
       <header class="top">
         <h1>Stack The Rat</h1>
         <div class="player-count" role="group" aria-label={t('players')}>
+          <button type="button" class="share-btn" onClick={openShare} aria-label={t('share')} title={t('share')}>
+            <Icon d={SHARE} size={18} />
+          </button>
           <button type="button" onClick={removePlayer} disabled={g.players.length <= MIN_PLAYERS} aria-label={t('removePlayer')}>
             −
           </button>
-          <span>
-            {g.players.length} {t('players').toLowerCase()}
-          </span>
+          <span>{g.players.length}</span>
           <button type="button" onClick={addPlayer} disabled={g.players.length >= MAX_PLAYERS} aria-label={t('addPlayer')}>
             +
           </button>
@@ -377,69 +425,80 @@ export function App() {
           <select value={lang} onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}>
             {LANGS.map((l) => (
               <option key={l.code} value={l.code}>
-                {l.label}
+                {l.code.toUpperCase()}
               </option>
             ))}
           </select>
         </label>
       </header>
 
-      {targeting !== null ? <p class="hint">{t('targetingHint')}</p> : <CardSearch onPick={setPreview} />}
+      {notice && <p class="notice">{notice}</p>}
 
-      {/* ---- Esilio: zona comune, ogni carta col colore del proprietario ---- */}
-      <section class={`bar exile-bar${exileOpen ? ' open' : ''}`}>
-        <button type="button" class="bar-head" data-obj="exile" aria-expanded={exileOpen} onClick={() => setExileOpen(!exileOpen)}>
+      <div class="search-row">
+        {targeting !== null ? <p class="hint">{t('targetingHint')}</p> : <CardSearch onPick={setPreview} />}
+        <button
+          type="button"
+          class={`exile-btn${panels.includes('exile') ? ' on' : ''}`}
+          data-obj="exile"
+          aria-pressed={panels.includes('exile')}
+          aria-label={`${t('exile')}: ${exile.length}`}
+          title={t('exile')}
+          onClick={() => togglePanel('exile')}
+        >
           <Portal />
-          <span class="bar-title">
-            {t('exile')} · {g.exile.length}
-          </span>
-          <span class="dots">
-            {g.exile.slice(-12).map((e) => (
-              <i key={e.uid} style={{ background: PLAYER_COLOR[e.owner] }} />
-            ))}
-          </span>
-          <Chevron up={exileOpen} />
+          <span>{exile.length}</span>
         </button>
-        {exileOpen && (
-          <div class="exile-list">
-            {g.exile.length === 0 && <p class="status">{t('exileEmpty')}</p>}
-            {g.exile.map((e) => (
-              <figure key={e.uid} class="exiled" style={{ '--pc': PLAYER_COLOR[e.owner] }}>
-                {e.card.image ? <img src={e.card.image} alt={e.card.printedName} /> : <span>{e.card.printedName}</span>}
-                <figcaption>{e.owner}</figcaption>
-              </figure>
-            ))}
-          </div>
-        )}
-      </section>
+      </div>
+
+      {panels.length > 0 && (
+        <div class="panels">
+          {panels.map((id) => {
+            const isExile = id === 'exile';
+            const owner = (isExile ? null : id.slice(3)) as PlayerId | null;
+            const cards = isExile ? exile : graveyard(owner!);
+            return (
+              <section key={id} class="panel" style={{ '--pc': owner ? PLAYER_COLOR[owner] : '#9aa3b5' }}>
+                <div class="panel-head">
+                  {isExile ? <Portal size={16} /> : <span class="panel-dot" />}
+                  <span class="panel-title">
+                    {isExile ? t('exile') : `${t('graveyard')} · ${t('player')} ${owner}`} ({cards.length})
+                  </span>
+                  <button type="button" class="panel-close" aria-label={t('close')} onClick={() => togglePanel(id)}>
+                    <Icon d={CROSS} size={16} />
+                  </button>
+                </div>
+                <div class="panel-list">
+                  {cards.length === 0 ? <p class="status">—</p> : cards.map((o) => renderTile(o, 'tile'))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
 
       <div class={`table ${g.players.length === 2 ? 'two' : 'multi'}`}>
         {g.players.map((id) => {
-          const mine = g.perms.filter((p) => p.controller === id);
+          const mine = g.objs.filter((o) => o.zone === 'battlefield' && o.controller === id);
+          const gy = graveyard(id);
           const hasPrio = g.priority === id;
           return (
-            <section
-              key={id}
-              class={`zone${hasPrio ? ' has-priority' : ''}`}
-              style={{ gridArea: id, '--pc': PLAYER_COLOR[id] }}
-            >
+            <section key={id} class={`zone${hasPrio ? ' has-priority' : ''}`} style={{ gridArea: id, '--pc': PLAYER_COLOR[id] }}>
               <div class="zone-head">
                 <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
                   {t('player')} {id}
                 </button>
-                <div
-                  class="gy"
+                <button
+                  type="button"
+                  class={`gy${panels.includes(`gy:${id}`) ? ' on' : ''}`}
                   data-obj={`gy:${id}`}
-                  title={t('graveyard')}
-                  aria-label={`${t('graveyard')}: ${g.graveyards[id].length}`}
+                  aria-pressed={panels.includes(`gy:${id}`)}
+                  aria-label={`${tr('graveyardOf', { p: id })}: ${gy.length}`}
+                  title={tr('graveyardOf', { p: id })}
+                  onClick={() => togglePanel(`gy:${id}`)}
                 >
-                  {g.graveyards[id].length > 0 ? (
-                    <img src={g.graveyards[id][g.graveyards[id].length - 1].image} alt="" />
-                  ) : (
-                    <span class="gy-empty" />
-                  )}
-                  <span class="gy-count">{g.graveyards[id].length}</span>
-                </div>
+                  {gy.length > 0 ? <img src={gy[gy.length - 1].card.image} alt="" /> : <span class="gy-empty" />}
+                  <span class="gy-count">{gy.length}</span>
+                </button>
               </div>
               {hasPrio && (
                 <div class="prio-strip">
@@ -451,42 +510,17 @@ export function App() {
               )}
               <div class="field">
                 {mine.length === 0 && <p class="status">{t('battlefieldEmpty')}</p>}
-                {mine.map((p) => (
-                  <div key={p.uid} {...objProps(objKey.perm(p.uid), 'perm')}>
-                    {p.card.image ? <img src={p.card.image} alt={p.card.printedName} /> : <span>{p.card.printedName}</span>}
-                    <div class="perm-tools">
-                      <button
-                        type="button"
-                        title={t('toGraveyard')}
-                        aria-label={`${t('toGraveyard')}: ${p.card.printedName}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          permanentTo(p, 'gy');
-                        }}
-                      >
-                        <Tomb />
-                      </button>
-                      <button
-                        type="button"
-                        title={t('toExile')}
-                        aria-label={`${t('toExile')}: ${p.card.printedName}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          permanentTo(p, 'exile');
-                        }}
-                      >
-                        <Portal />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                {mine.map((o) => renderTile(o, 'perm'))}
               </div>
             </section>
           );
         })}
 
         <section class="stack-col" ref={stackCol}>
-          <div class={`priority${g.priority === null ? ' nobody' : ''}`} style={{ '--pc': g.priority ? PLAYER_COLOR[g.priority] : '' }}>
+          <div
+            class={`priority${g.priority === null ? ' nobody' : ''}`}
+            style={{ '--pc': g.priority ? PLAYER_COLOR[g.priority] : '' }}
+          >
             <label class="turn">
               {t('turn')}
               <select
@@ -571,7 +605,7 @@ export function App() {
                             onTargetButton(it);
                           }}
                         >
-                          {showCross ? <Cross /> : <Crosshair />}
+                          {showCross ? <Icon d={CROSS} /> : <Crosshair />}
                         </button>
                       )}
                       <button
@@ -595,34 +629,133 @@ export function App() {
         </section>
       </div>
 
-      {/* ---- Storico + Annulla ---- */}
+      {/* ---- Storico: indietro / avanti tra le condizioni ---- */}
       <section class={`bar history-bar${historyOpen ? ' open' : ''}${flash ? ' flash' : ''}`}>
         {historyOpen && (
           <ol class="log">
-            {log.length === 0 && <li class="status">{t('noHistory')}</li>}
-            {[...log].reverse().map((e) => (
-              <li key={e.id}>
-                <time>{e.time}</time> {e.text}
+            {entries.length === 0 && <li class="status">{t('noHistory')}</li>}
+            {[...entries].reverse().map((e) => (
+              <li key={`${e.i}-${e.j}`} class={e.i > pos ? 'future' : e.i === pos ? 'current' : ''}>
+                <button type="button" onClick={() => goTo(e.i)}>
+                  <time>{e.time}</time> {e.text}
+                </button>
               </li>
             ))}
           </ol>
         )}
         <div class="bar-row">
-          <button type="button" class="undo" onClick={undo} disabled={past.length === 0} aria-label={t('undo')} title={t('undo')}>
-            <UndoIcon />
+          <button type="button" class="step" onClick={() => goTo(pos - 1)} disabled={pos === 0} aria-label={t('back')} title={t('back')}>
+            <Icon d={BACK} />
+          </button>
+          <button
+            type="button"
+            class="step"
+            onClick={() => goTo(pos + 1)}
+            disabled={pos >= timeline.length - 1}
+            aria-label={t('forward')}
+            title={t('forward')}
+          >
+            <Icon d={FORWARD} />
           </button>
           <button type="button" class="bar-head" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>
             <span class="bar-title">
-              {t('history')} · {log.length}
+              {t('history')} {pos}/{timeline.length - 1}
             </span>
-            <span class="last">{lastMessage?.text ?? ''}</span>
-            <Chevron up={!historyOpen} />
+            <span class="last">{currentMessage}</span>
+            <Icon d={chevron(!historyOpen)} size={18} />
           </button>
         </div>
       </section>
 
       <Arrows links={links} />
 
+      {/* ---- Menu della carta ---- */}
+      {menu && menuObj && (
+        <div class="menu-backdrop" onClick={() => setMenu(null)}>
+          <div
+            class="menu"
+            role="menu"
+            style={{
+              left: `${Math.max(8, Math.min(menu.x - 220, window.innerWidth - 228))}px`,
+              top: `${Math.max(8, Math.min(menu.y + 4, window.innerHeight - 300))}px`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p class="menu-title">
+              {menuObj.card.printedName}
+              {menuObj.token ? ` · ${t('token')}` : ''}
+            </p>
+            <p class="menu-label">{t('moveTo')}</p>
+            {DESTINATIONS.filter((d) => d !== menuObj.zone).map((d) => (
+              <button
+                key={d}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  moveObj(menuObj, d);
+                  setMenu(null);
+                }}
+              >
+                → {destName(d)}
+              </button>
+            ))}
+            <hr />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                tokenCopy(menuObj);
+                setMenu(null);
+              }}
+            >
+              {t('tokenCopy')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="danger"
+              onClick={() => {
+                removeObj(menuObj);
+                setMenu(null);
+              }}
+            >
+              {t('removeCard')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Condivisione del setup ---- */}
+      {share && (
+        <div class="sheet-backdrop" onClick={() => setShare(null)}>
+          <section class="sheet share-sheet" onClick={(e) => e.stopPropagation()}>
+            <h2>{t('shareTitle')}</h2>
+            {share.url ? (
+              <>
+                <p class="status">{t('shareHelp')}</p>
+                <input id="share-url" readOnly value={share.url} onFocus={(e) => (e.target as HTMLInputElement).select()} />
+                <div class="actions">
+                  <button type="button" class="primary" onClick={copyShare}>
+                    {share.copied ? t('copied') : t('copy')}
+                  </button>
+                  {'share' in navigator && (
+                    <button type="button" class="secondary" onClick={nativeShare}>
+                      {t('shareVia')}
+                    </button>
+                  )}
+                  <button type="button" class="secondary" onClick={() => setShare(null)}>
+                    {t('close')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p class="status error">{t('shareFail')}</p>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* ---- Scheda carta (dopo la ricerca) ---- */}
       {preview && (
         <div class="sheet-backdrop" onClick={() => setPreview(null)}>
           <section class="sheet" onClick={(e) => e.stopPropagation()}>
@@ -647,13 +780,7 @@ export function App() {
               <p class="label">{t('toBattlefield')}</p>
               <div class="chips">
                 {g.players.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    class="chip outline"
-                    style={{ '--pc': PLAYER_COLOR[p] }}
-                    onClick={() => putOnBattlefield(p)}
-                  >
+                  <button key={p} type="button" class="chip outline" style={{ '--pc': PLAYER_COLOR[p] }} onClick={() => putOnBattlefield(p)}>
                     {p}
                   </button>
                 ))}

@@ -106,17 +106,7 @@ input { width: 100%; }
   border-radius: 5px; overflow: hidden; box-shadow: 0 2px 6px #0008;
 }
 .perm img { width: 100%; height: 100%; display: block; }
-.perm span { display: grid; place-items: center; height: 100%; padding: 4px; font-size: 11px; background: var(--line); }
-.perm-tools {
-  position: absolute; top: 0; inset-inline-end: 0; display: flex;
-  border-end-start-radius: 8px; overflow: hidden;
-}
-.perm-tools button {
-  width: 26px; height: 26px; border: 0; background: #000c; color: #fff; cursor: pointer;
-  display: grid; place-items: center; padding: 0;
-}
-.perm-tools button + button { border-inline-start: 1px solid #fff3; }
-
+.perm .no-img { font-size: 10px; }
 /* ---------- Pila ---------- */
 .stack-col {
   grid-area: S;
@@ -169,7 +159,7 @@ input { width: 100%; }
 .tgt.on { background: var(--danger); }
 
 /* ---------- Scelta dei bersagli ---------- */
-.targeting .perm-tools, .targeting .pile-card:not(.is-source) .card-tools { visibility: hidden; }
+.targeting .more, .targeting .pile-card:not(.is-source) .card-tools { visibility: hidden; }
 .targeting .can-target { cursor: crosshair; outline: 3px dashed #fff; outline-offset: -3px; }
 .pile-card.is-source { filter: none; box-shadow: 0 0 0 3px var(--pc), 0 -6px 18px #000a; }
 
@@ -239,7 +229,11 @@ input { width: 100%; }
 
 .zone-head .player-tag { white-space: nowrap; overflow: hidden; }
 /* Cimitero: miniatura dell'ultima carta + numero di carte */
-.gy { position: relative; display: grid; place-items: center; padding: 4px 8px; flex: none; }
+.gy {
+  position: relative; display: grid; place-items: center; padding: 4px 8px; flex: none;
+  border: 0; background: none; cursor: pointer;
+}
+.gy.on { background: #0003; }
 .gy img, .gy-empty { height: 32px; aspect-ratio: 488 / 680; border-radius: 3px; display: block; }
 .gy img { filter: grayscale(.4); }
 .gy-empty { border: 1.5px dashed #15120c88; }
@@ -279,31 +273,14 @@ input { width: 100%; }
   padding: 0 12px; border: 0; background: none; cursor: pointer; text-align: start;
 }
 .bar-title { font-weight: 600; font-size: 14px; white-space: nowrap; }
-.dots { flex: 1; display: flex; gap: 3px; overflow: hidden; }
-.dots i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.exile-list {
-  display: flex; gap: 8px; overflow-x: auto; padding: 4px 12px 12px;
-  max-height: 34dvh;
-}
-.exiled { position: relative; margin: 0; flex: none; width: 64px; }
-.exiled img, .exiled span {
-  width: 100%; aspect-ratio: 488 / 680; display: block; border-radius: 5px;
-  outline: 3px solid var(--pc); outline-offset: -1px;
-}
-.exiled span { display: grid; place-items: center; font-size: 10px; background: var(--line); padding: 2px; }
-.exiled figcaption {
-  position: absolute; bottom: 3px; inset-inline-start: 3px; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--pc); color: #15120c; font-size: 11px; font-weight: 700; display: grid; place-items: center;
-}
-
 .history-bar { display: flex; flex-direction: column; transition: border-color .3s; }
 .history-bar.flash { border-color: var(--accent); }
 .bar-row { display: flex; align-items: stretch; }
-.undo {
-  width: 48px; flex: none; border: 0; border-inline-end: 1px solid var(--line);
+.step {
+  width: 46px; flex: none; border: 0; border-inline-end: 1px solid var(--line);
   background: none; cursor: pointer; display: grid; place-items: center;
 }
-.undo:disabled { opacity: .3; cursor: default; }
+.step:disabled { opacity: .3; cursor: default; }
 .history-bar .bar-head { flex: 1; }
 .last { flex: 1; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .log {
@@ -315,3 +292,96 @@ input { width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .prio-arrow, .pile-card.is-resolving .badge { animation: none; }
 }
+
+/* ---------- Ricerca + pulsante esilio ---------- */
+.search-row { display: flex; gap: 8px; align-items: flex-start; }
+.search-row > .search, .search-row > .hint { flex: 1; }
+.exile-btn {
+  flex: none; min-width: 64px; height: 44px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); display: flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; font-weight: 600;
+}
+.exile-btn.on { border-color: #c9d1e3; background: #c9d1e322; }
+.notice {
+  margin: 0; padding: 8px 12px; border-radius: 10px; background: #fff; color: #15120c; font-size: 14px;
+}
+
+/* ---------- Pannelli: esilio e cimiteri, uno sotto l'altro nell'ordine di apertura ---------- */
+.panels { display: grid; gap: 6px; flex: none; max-height: 46dvh; overflow-y: auto; }
+.panel {
+  border: 1px solid color-mix(in srgb, var(--pc) 50%, var(--line)); border-radius: 12px;
+  background: color-mix(in srgb, var(--pc) 8%, var(--panel));
+}
+.panel-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 12px; min-height: 36px; }
+.panel-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); }
+.panel-title { flex: 1; font-size: 14px; font-weight: 600; }
+.panel-close {
+  width: 36px; height: 36px; border: 0; border-radius: 8px; background: none; cursor: pointer;
+  display: grid; place-items: center; color: var(--muted);
+}
+/* scorrimento orizzontale quando le carte sono tante */
+.panel-list {
+  display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain;
+  padding: 2px 12px 10px; scroll-snap-type: x proximity;
+}
+.panel-list .status { margin: 0 0 4px; }
+
+/* ---------- Carte con menu ⋯ (campo, cimitero, esilio) ---------- */
+.tile {
+  position: relative; flex: none; width: 64px; aspect-ratio: 488 / 680; scroll-snap-align: start;
+  border-radius: 5px; overflow: hidden; outline: 3px solid var(--pc); outline-offset: -1px;
+}
+.tile img, .perm img { width: 100%; height: 100%; display: block; }
+.no-img { display: grid; place-items: center; height: 100%; padding: 3px; font-size: 10px; background: var(--line); text-align: center; }
+.owner-tag {
+  position: absolute; bottom: 3px; inset-inline-start: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--pc); color: #15120c; font-size: 11px; font-weight: 700; display: grid; place-items: center;
+}
+.token-tag {
+  position: absolute; bottom: 3px; inset-inline-end: 3px; padding: 0 5px; border-radius: 4px;
+  background: #fff; color: #15120c; font-size: 10px; font-weight: 700;
+}
+.more {
+  position: absolute; top: 0; inset-inline-end: 0; width: 30px; height: 26px; padding: 0;
+  border: 0; border-end-start-radius: 8px; background: #000c; color: #fff;
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+
+.menu-backdrop { position: fixed; inset: 0; z-index: 85; }
+.menu {
+  position: fixed; width: 220px; padding: 6px; border-radius: 12px;
+  background: #262b36; border: 1px solid var(--line); box-shadow: 0 14px 40px #000c;
+  display: grid;
+}
+.menu-title { margin: 4px 8px 2px; font-weight: 700; font-size: 14px; }
+.menu-label { margin: 6px 8px 2px; font-size: 12px; color: var(--muted); }
+.menu button {
+  min-height: 40px; text-align: start; padding: 0 10px; border: 0; border-radius: 8px;
+  background: none; cursor: pointer; font-size: 15px;
+}
+.menu button:hover, .menu button:focus-visible { background: var(--line); }
+.menu hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.menu .danger { color: var(--danger); }
+
+/* ---------- Storico: condizioni future attenuate, corrente evidenziata ---------- */
+.log button {
+  width: 100%; text-align: start; border: 0; background: none; padding: 4px 6px; border-radius: 6px;
+  cursor: pointer; font-size: 13px;
+}
+.log button:hover { background: var(--line); }
+.log .future { opacity: .45; }
+.log .current button { background: #e0a43a22; box-shadow: inset 3px 0 0 var(--accent); }
+
+/* ---------- Condivisione ---------- */
+.share-btn { display: grid; place-items: center; margin-inline-end: 4px; }
+.share-sheet { flex-direction: column; align-items: stretch; gap: 10px; }
+.share-sheet h2 { margin: 0; color: var(--ink); font-size: 18px; }
+.share-sheet input { font-size: 14px; }
+.share-sheet .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-sheet .secondary { margin-top: 0; }
+.primary {
+  min-height: 44px; padding: 0 20px; border: 0; border-radius: 10px;
+  background: var(--accent); color: #1a1408; font-weight: 600; cursor: pointer;
+}
+.chip:disabled { opacity: .35; cursor: default; }
+.perm .token-tag { font-size: 9px; }

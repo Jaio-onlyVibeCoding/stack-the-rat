@@ -12,27 +12,120 @@ export const PLAYER_COLOR: Record<PlayerId, string> = {
   D: '#e26dae',
 };
 
+/** Zone in cui una carta può stare fuori dalla pila. */
+export type Zone = 'battlefield' | 'graveyard' | 'exile';
+export type Destination = Zone | 'stack';
+
+/** Carta (o token) sul campo di battaglia, nel cimitero o in esilio. */
+export interface CardObj {
+  uid: number;
+  card: Card;
+  owner: PlayerId;
+  controller: PlayerId;
+  zone: Zone;
+  token?: boolean;
+}
+
 /** Oggetto in pila (magia o abilità). targets = chiavi degli oggetti/giocatori bersagliati. */
 export interface StackItem {
   uid: number;
   card: Card;
+  owner: PlayerId;
   controller: PlayerId;
   targets: string[];
 }
 
-/** Permanente sul campo di battaglia. */
-export interface Permanent {
-  uid: number;
-  card: Card;
-  controller: PlayerId;
+/** Tutto lo stato di gioco: è ciò che si salva nella cronologia e che si condivide. */
+export interface Game {
+  players: PlayerId[];
+  /** giocatore attivo (di chi è il turno) */
+  active: PlayerId;
+  /** chi ha la priorità; null = nessuno (durante la risoluzione) */
+  priority: PlayerId | null;
+  /** giocatori che hanno passato di fila (CR 117.4) */
+  passed: PlayerId[];
+  stack: StackItem[];
+  objs: CardObj[];
+  /** oggetti che hanno cambiato zona: chiave vecchia → dove sono finiti (per le frecce illegali) */
+  gone: Record<string, string>;
+  /** uid dell'oggetto in risoluzione */
+  resolving: number | null;
 }
+
+export const initialGame = (): Game => ({
+  players: ['A', 'B'],
+  active: 'A',
+  priority: 'A',
+  passed: [],
+  stack: [],
+  objs: [],
+  gone: {},
+  resolving: null,
+});
 
 /** Chiavi univoche per tutto ciò che può essere bersagliato (usate anche nel DOM: data-obj). */
 export const objKey = {
   stack: (uid: number) => `stack:${uid}`,
+  /** permanente sul campo di battaglia */
   perm: (uid: number) => `perm:${uid}`,
+  /** carta nel cimitero o in esilio */
+  card: (uid: number) => `card:${uid}`,
   player: (id: PlayerId) => `player:${id}`,
+  of: (o: CardObj) => (o.zone === 'battlefield' ? `perm:${o.uid}` : `card:${o.uid}`),
 };
 
 let counter = 0;
 export const newUid = () => ++counter;
+/** Dopo aver caricato un setup condiviso: i nuovi uid partono oltre quelli esistenti. */
+export const bumpUid = (n: number) => {
+  counter = Math.max(counter, n);
+};
+
+/** Un bersaglio è legale se esiste ancora nella stessa zona (le altre condizioni le valuta il giocatore). */
+export function isLegal(g: Game, key: string): boolean {
+  const [kind, id] = key.split(':');
+  const n = Number(id);
+  if (kind === 'player') return g.players.includes(id as PlayerId);
+  if (kind === 'perm') return g.objs.some((o) => o.uid === n && o.zone === 'battlefield');
+  if (kind === 'card') return g.objs.some((o) => o.uid === n && o.zone !== 'battlefield');
+  if (kind === 'stack') return g.stack.some((x) => x.uid === n);
+  return false;
+}
+
+export type Source = { kind: 'obj'; obj: CardObj } | { kind: 'stack'; item: StackItem };
+
+/**
+ * Sposta una carta in un'altra zona. Cambiando zona diventa un nuovo oggetto (CR 400.7):
+ * i bersagli che la puntavano diventano illegali, e le loro frecce puntano alla nuova posizione.
+ * Un token che lascia il campo di battaglia cessa di esistere (CR 111.7, 704.5d).
+ */
+export function relocate(g: Game, src: Source, dest: Destination): { game: Game; tokenGone: boolean } {
+  const card = src.kind === 'obj' ? src.obj.card : src.item.card;
+  const owner = src.kind === 'obj' ? src.obj.owner : src.item.owner;
+  // Chi controllerà la carta nella nuova zona: dalla pila o dal campo resta il controllore, altrimenti il proprietario
+  const controller =
+    src.kind === 'stack' ? src.item.controller : src.obj.zone === 'battlefield' ? src.obj.controller : owner;
+  const oldKey = src.kind === 'stack' ? objKey.stack(src.item.uid) : objKey.of(src.obj);
+  const isToken = src.kind === 'obj' && !!src.obj.token;
+
+  let next: Game =
+    src.kind === 'stack'
+      ? { ...g, stack: g.stack.filter((x) => x.uid !== src.item.uid) }
+      : { ...g, objs: g.objs.filter((o) => o.uid !== src.obj.uid) };
+
+  const where =
+    dest === 'graveyard' ? `gy:${owner}` : dest === 'exile' ? 'exile' : null;
+
+  if (isToken && dest !== 'battlefield') {
+    return { game: { ...next, gone: { ...next.gone, [oldKey]: where ?? 'exile' } }, tokenGone: true };
+  }
+
+  const uid = newUid();
+  if (dest === 'stack') {
+    next = { ...next, stack: [...next.stack, { uid, card, owner, controller, targets: [] }] };
+  } else {
+    next = { ...next, objs: [...next.objs, { uid, card, owner, controller, zone: dest }] };
+  }
+  const newKey = dest === 'stack' ? objKey.stack(uid) : dest === 'battlefield' ? objKey.perm(uid) : where!;
+  return { game: { ...next, gone: { ...next.gone, [oldKey]: newKey } }, tokenGone: false };
+}

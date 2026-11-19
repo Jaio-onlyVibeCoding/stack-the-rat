@@ -5,13 +5,15 @@ const API = 'https://api.scryfall.com';
 const MIN_GAP_MS = 100;
 let nextSlot = 0;
 
-async function get<T>(path: string, signal?: AbortSignal): Promise<T | null> {
-  // Distanzia le richieste di almeno 100 ms
+async function waitTurn() {
   const now = Date.now();
   const wait = Math.max(0, nextSlot - now);
   nextSlot = now + wait + MIN_GAP_MS;
   if (wait) await new Promise((r) => setTimeout(r, wait));
+}
 
+async function get<T>(path: string, signal?: AbortSignal): Promise<T | null> {
+  await waitTurn(); // distanzia le richieste di almeno 100 ms
   const res = await fetch(API + path, { headers: { Accept: 'application/json' }, signal });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Scryfall ${res.status}`);
@@ -53,7 +55,7 @@ export interface Card {
 
 const PERMANENT_TYPES = /\b(Creature|Artifact|Enchantment|Planeswalker|Land|Battle)\b/;
 
-function toCard(r: RawCard): Card {
+export function toCard(r: RawCard): Card {
   // Le carte bifronte hanno immagini e testi dentro card_faces: usiamo il fronte
   const f = r.card_faces?.[0];
   const img = r.image_uris ?? f?.image_uris;
@@ -142,4 +144,22 @@ export async function getCard(name: string, scryLang: string): Promise<Card | nu
   }
   if (card) cache.set(key, card);
   return card;
+}
+
+/** Recupera più carte per id Scryfall (max 75 per richiesta). Usato per caricare un setup condiviso. */
+export async function fetchByIds(ids: string[]): Promise<Map<string, Card>> {
+  const out = new Map<string, Card>();
+  const unique = [...new Set(ids)];
+  for (let i = 0; i < unique.length; i += 75) {
+    await waitTurn();
+    const res = await fetch(API + '/cards/collection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ identifiers: unique.slice(i, i + 75).map((id) => ({ id })) }),
+    });
+    if (!res.ok) throw new Error(`Scryfall ${res.status}`);
+    const j = (await res.json()) as { data: RawCard[] };
+    for (const r of j.data) out.set(r.id, toCard(r));
+  }
+  return out;
 }
