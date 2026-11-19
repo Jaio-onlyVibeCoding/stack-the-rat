@@ -25,7 +25,8 @@ function anchor(key: string): Point | null {
   if (r.width === 0) return null;
   if (el.dataset.anchor === 'strip') {
     const peek = Math.max(r.width * 0.16, 40);
-    return { x: r.left + r.width / 2, y: r.top + Math.min(peek, r.height) / 2 };
+    // a sinistra del centro, per non finire sotto i pulsanti mirino / rimuovi
+    return { x: r.left + r.width * 0.35, y: r.top + Math.min(peek, r.height) / 2 };
   }
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
