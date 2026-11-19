@@ -16,6 +16,7 @@ import {
   type Game,
   type PlayerId,
   type StackItem,
+  type StackKind,
 } from './game';
 import { LANGS, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
 import type { Card } from './scryfall';
@@ -45,6 +46,9 @@ const BACK = 'M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3';
 const FORWARD = 'M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h3';
 const SHARE = 'M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6';
 const chevron = (up: boolean) => (up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6');
+/** Icone delle abilità: fulmine = innescata, freccia di attivazione = attivata */
+const TRIGGER = 'M13 2L4 14h7l-1 8 9-12h-7z';
+const ACTIVATE = 'M4 12a8 8 0 1 0 3-6.2M4 4v4h4';
 
 /** Una "condizione" della partita: lo stato e i messaggi che l'hanno prodotta. */
 interface Snapshot {
@@ -78,6 +82,10 @@ export function App() {
   const [share, setShare] = useState<{ url: string; copied: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
+  /** campi di battaglia chiusi */
+  const [collapsed, setCollapsed] = useState<PlayerId[]>([]);
+  /** scelta del testo di un'abilità prima di metterla in pila */
+  const [abilityPick, setAbilityPick] = useState<{ card: Card; kind: StackKind; controller: PlayerId } | null>(null);
   const stackCol = useRef<HTMLElement>(null);
 
   // Apertura di un setup condiviso (#s=...)
@@ -184,7 +192,7 @@ export function App() {
     commit(
       {
         ...g,
-        stack: [...g.stack, { uid: newUid(), card: preview, owner: controller, controller, targets: [] }],
+        stack: [...g.stack, { uid: newUid(), card: preview, owner: controller, controller, targets: [], kind: 'spell' }],
         priority: controller,
         passed: [],
       },
@@ -192,6 +200,23 @@ export function App() {
     );
     setPreview(null);
   }
+  /**
+   * Mette in pila un'abilità. Attivata (CR 602): chi la attiva riceve la priorità (117.3c).
+   * Innescata (CR 603.3): va in pila quando un giocatore riceverebbe la priorità; la priorità non cambia.
+   */
+  function addAbility(text: string) {
+    if (!abilityPick) return;
+    const { card, kind, controller } = abilityPick;
+    const item: StackItem = { uid: newUid(), card, owner: controller, controller, targets: [], kind, text: text || undefined };
+    const priority = kind === 'activated' ? controller : g.priority;
+    commit(
+      { ...g, stack: [...g.stack, item], priority, passed: [] },
+      tr(kind === 'activated' ? 'logActivate' : 'logTrigger', { p: controller, card: card.printedName }),
+    );
+    setAbilityPick(null);
+    setPreview(null);
+  }
+
   function putOnBattlefield(controller: PlayerId) {
     if (!preview) return;
     commit(
@@ -259,6 +284,12 @@ export function App() {
     const name = top.card.printedName;
     const legal = top.targets.filter((k) => isLegal(g, k));
     if (top.targets.length > 0 && legal.length === 0) {
+      if (top.kind !== 'spell') {
+        // un'abilità che non si risolve lascia semplicemente la pila
+        const rest = g.stack.filter((x) => x.uid !== top.uid);
+        commit({ ...g, stack: rest, passed: [], priority: g.active }, passMsg, tr('abilityFizzled', { card: name }));
+        return;
+      }
       const { game } = relocate(g, { kind: 'stack', item: top }, 'graveyard');
       commit({ ...game, passed: [], priority: g.active }, passMsg, tr('fizzled', { card: name }));
       return;
@@ -274,6 +305,14 @@ export function App() {
   function finishResolution() {
     const it = resolvingItem;
     if (!it) return;
+    if (it.kind !== 'spell') {
+      // un'abilità risolta lascia la pila e cessa di esistere
+      commit(
+        { ...g, stack: g.stack.filter((x) => x.uid !== it.uid), resolving: null, priority: g.active, passed: [] },
+        tr('abilityResolved', { card: it.card.printedName }),
+      );
+      return;
+    }
     // CR 608.3: una magia permanente entra sul campo; CR 608.2n: istantaneo/stregoneria va al cimitero
     const dest = it.card.isPermanent ? 'battlefield' : 'graveyard';
     const { game } = relocate(g, { kind: 'stack', item: it }, dest);
@@ -402,6 +441,15 @@ export function App() {
   // Storico: tutti i messaggi, il più recente in alto; quelli "futuri" (dopo pos) appaiono attenuati
   const entries = timeline.flatMap((s, i) => s.messages.map((text, j) => ({ i, j, text, time: s.time })));
   const currentMessage = timeline[pos].messages[timeline[pos].messages.length - 1] ?? '';
+  // Una riga del tavolo si riduce quando tutti i suoi campi di battaglia sono chiusi
+  const rows: PlayerId[][] = g.players.length === 2 ? [['A'], ['B']] : [['A', 'B'], ['C', 'D']];
+  const sizes = rows
+    .map((r) => {
+      const present = r.filter((p) => g.players.includes(p));
+      return present.length > 0 && present.every((p) => collapsed.includes(p)) ? 'auto' : 'minmax(0, 1fr)';
+    })
+  // se tutto è chiuso, l'ultima riga prende lo spazio restante (la pila resta alta)
+  const rowSizes = sizes.every((x) => x === 'auto') ? [...sizes.slice(0, -1), 'minmax(0, 1fr)'].join(' ') : sizes.join(' ');
   const menuObj = menu ? g.objs.find((o) => o.uid === menu.uid) : undefined;
 
   return (
@@ -476,14 +524,28 @@ export function App() {
         </div>
       )}
 
-      <div class={`table ${g.players.length === 2 ? 'two' : 'multi'}`}>
+      <div class={`table ${g.players.length === 2 ? 'two' : 'multi'}`} style={{ gridTemplateRows: rowSizes }}>
         {g.players.map((id) => {
           const mine = g.objs.filter((o) => o.zone === 'battlefield' && o.controller === id);
           const gy = graveyard(id);
           const hasPrio = g.priority === id;
+          const isCollapsed = collapsed.includes(id);
           return (
-            <section key={id} class={`zone${hasPrio ? ' has-priority' : ''}`} style={{ gridArea: id, '--pc': PLAYER_COLOR[id] }}>
+            <section
+              key={id}
+              class={`zone${hasPrio ? ' has-priority' : ''}${isCollapsed ? ' collapsed' : ''}`}
+              style={{ gridArea: id, '--pc': PLAYER_COLOR[id] }}
+            >
               <div class="zone-head">
+                <button
+                  type="button"
+                  class="collapse"
+                  aria-expanded={!isCollapsed}
+                  aria-label={tr(isCollapsed ? 'expand' : 'collapse', { p: id })}
+                  onClick={() => setCollapsed((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
+                >
+                  <Icon d={chevron(!isCollapsed)} size={16} />
+                </button>
                 <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
                   {t('player')} {id}
                 </button>
@@ -508,10 +570,12 @@ export function App() {
                   {t('hasPriority')}
                 </div>
               )}
+              {!isCollapsed && (
               <div class="field">
                 {mine.length === 0 && <p class="status">{t('battlefieldEmpty')}</p>}
                 {mine.map((o) => renderTile(o, 'perm'))}
               </div>
+              )}
             </section>
           );
         })}
@@ -586,7 +650,17 @@ export function App() {
                     data-anchor="strip"
                     style={{ zIndex: i + 1, '--pc': PLAYER_COLOR[it.controller] }}
                   >
-                    {it.card.image ? (
+                    {it.kind !== 'spell' ? (
+                      <div class={`ability ${it.kind}`}>
+                        <div class="ability-head">
+                          <Icon d={it.kind === 'activated' ? ACTIVATE : TRIGGER} size={16} />
+                          <span>{it.card.printedName}</span>
+                        </div>
+                        {it.card.art && <img class="ability-art" src={it.card.art} alt="" />}
+                        <p class="ability-kind">{t(it.kind as Key)}</p>
+                        <p class="ability-text">{it.text ?? '—'}</p>
+                      </div>
+                    ) : it.card.image ? (
                       <img src={it.card.image} alt={it.card.printedName} />
                     ) : (
                       <div class="no-image">{it.card.printedName}</div>
@@ -703,6 +777,30 @@ export function App() {
             <button
               type="button"
               role="menuitem"
+              disabled={g.resolving !== null}
+              onClick={() => {
+                const c = menuObj.zone === 'battlefield' ? menuObj.controller : menuObj.owner;
+                setAbilityPick({ card: menuObj.card, kind: 'activated', controller: c });
+                setMenu(null);
+              }}
+            >
+              <Icon d={ACTIVATE} size={16} /> {t('activate')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const c = menuObj.zone === 'battlefield' ? menuObj.controller : menuObj.owner;
+                setAbilityPick({ card: menuObj.card, kind: 'triggered', controller: c });
+                setMenu(null);
+              }}
+            >
+              <Icon d={TRIGGER} size={16} /> {t('trigger')}
+            </button>
+            <hr />
+            <button
+              type="button"
+              role="menuitem"
               onClick={() => {
                 tokenCopy(menuObj);
                 setMenu(null);
@@ -785,10 +883,66 @@ export function App() {
                   </button>
                 ))}
               </div>
+              <p class="label">{t('activatedBy')}</p>
+              <div class="chips">
+                {g.players.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    class="chip outline small"
+                    style={{ '--pc': PLAYER_COLOR[p] }}
+                    disabled={g.resolving !== null}
+                    onClick={() => setAbilityPick({ card: preview, kind: 'activated', controller: p })}
+                  >
+                    <Icon d={ACTIVATE} size={14} /> {p}
+                  </button>
+                ))}
+              </div>
+              <p class="label">{t('triggeredFor')}</p>
+              <div class="chips">
+                {g.players.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    class="chip outline small"
+                    style={{ '--pc': PLAYER_COLOR[p] }}
+                    onClick={() => setAbilityPick({ card: preview, kind: 'triggered', controller: p })}
+                  >
+                    <Icon d={TRIGGER} size={14} /> {p}
+                  </button>
+                ))}
+              </div>
               <button type="button" class="secondary" onClick={() => setPreview(null)}>
                 {t('cancel')}
               </button>
             </div>
+          </section>
+        </div>
+      )}
+
+      {/* ---- Scelta dell'abilità ---- */}
+      {abilityPick && (
+        <div class="sheet-backdrop" onClick={() => setAbilityPick(null)}>
+          <section class="sheet ability-sheet" onClick={(e) => e.stopPropagation()}>
+            <h2>
+              <Icon d={abilityPick.kind === 'activated' ? ACTIVATE : TRIGGER} size={18} />{' '}
+              {t(abilityPick.kind as Key)} · {abilityPick.card.printedName} ({abilityPick.controller})
+            </h2>
+            <p class="label">{t('chooseAbility')}</p>
+            <div class="ability-options">
+              {abilityPick.card.text
+                .split('\n')
+                .filter((line) => line.trim())
+                .map((line, i) => (
+                  <button key={i} type="button" onClick={() => addAbility(line)}>
+                    {line}
+                  </button>
+                ))}
+              <button type="button" class="generic" onClick={() => addAbility('')}>
+                {t('genericAbility')}
+              </button>
+            </div>
+            <p class="status">{t('abilityHelp')}</p>
           </section>
         </div>
       )}

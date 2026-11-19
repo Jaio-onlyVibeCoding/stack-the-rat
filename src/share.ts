@@ -2,7 +2,7 @@
 // Nel link ci sono solo gli id Scryfall delle carte; chi apre il link le riscarica da Scryfall.
 // Il testo è compresso (deflate) e codificato in base64url, dopo "#s=".
 
-import { bumpUid, type Game, type PlayerId, type Zone } from './game';
+import { bumpUid, type Game, type PlayerId, type StackKind, type Zone } from './game';
 import { fetchByIds } from './scryfall';
 
 interface Shared {
@@ -12,8 +12,8 @@ interface Shared {
   pr: PlayerId | null;
   ps: PlayerId[];
   r: number | null;
-  /** pila: [uid, idScryfall, proprietario, controllore, bersagli] */
-  s: [number, string, PlayerId, PlayerId, string[]][];
+  /** pila: [uid, idScryfall, proprietario, controllore, bersagli, tipo, testo abilità] */
+  s: [number, string, PlayerId, PlayerId, string[], StackKind?, string?][];
   /** carte: [uid, idScryfall, proprietario, controllore, zona, token] */
   o: [number, string, PlayerId, PlayerId, Zone, 0 | 1][];
   g: Record<string, string>;
@@ -42,7 +42,7 @@ export async function encodeGame(g: Game): Promise<string> {
     pr: g.priority,
     ps: g.passed,
     r: g.resolving,
-    s: g.stack.map((x) => [x.uid, x.card.scryfallId, x.owner, x.controller, x.targets]),
+    s: g.stack.map((x) => [x.uid, x.card.scryfallId, x.owner, x.controller, x.targets, x.kind, x.text]),
     o: g.objs.map((o) => [o.uid, o.card.scryfallId, o.owner, o.controller, o.zone, o.token ? 1 : 0]),
     g: g.gone,
   };
@@ -66,7 +66,15 @@ export async function decodeGame(code: string): Promise<Game> {
     gone: s.g,
     stack: s.s
       .filter((x) => cards.has(x[1]))
-      .map(([uid, id, owner, controller, targets]) => ({ uid, card: cards.get(id)!, owner, controller, targets })),
+      .map(([uid, id, owner, controller, targets, kind, text]) => ({
+        uid,
+        card: cards.get(id)!,
+        owner,
+        controller,
+        targets,
+        kind: kind ?? 'spell',
+        text,
+      })),
     objs: s.o
       .filter((x) => cards.has(x[1]))
       .map(([uid, id, owner, controller, zone, token]) => ({

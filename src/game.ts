@@ -26,13 +26,19 @@ export interface CardObj {
   token?: boolean;
 }
 
-/** Oggetto in pila (magia o abilità). targets = chiavi degli oggetti/giocatori bersagliati. */
+/** Tipo di oggetto in pila: magia, abilità attivata (CR 602) o innescata (CR 603). */
+export type StackKind = 'spell' | 'activated' | 'triggered';
+
+/** Oggetto in pila. Per le abilità, card è la fonte. targets = chiavi degli oggetti/giocatori bersagliati. */
 export interface StackItem {
   uid: number;
   card: Card;
   owner: PlayerId;
   controller: PlayerId;
   targets: string[];
+  kind: StackKind;
+  /** testo dell'abilità (solo per le abilità) */
+  text?: string;
 }
 
 /** Tutto lo stato di gioco: è ciò che si salva nella cronologia e che si condivide. */
@@ -122,7 +128,7 @@ export function relocate(g: Game, src: Source, dest: Destination): { game: Game;
 
   const uid = newUid();
   if (dest === 'stack') {
-    next = { ...next, stack: [...next.stack, { uid, card, owner, controller, targets: [] }] };
+    next = { ...next, stack: [...next.stack, { uid, card, owner, controller, targets: [], kind: 'spell' }] };
   } else {
     next = { ...next, objs: [...next.objs, { uid, card, owner, controller, zone: dest }] };
   }

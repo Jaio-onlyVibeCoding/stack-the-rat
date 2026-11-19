@@ -47,6 +47,8 @@ export interface Card {
   manaCost: string;
   typeLine: string;
   text: string;
+  /** Testo Oracle inglese */
+  oracleText: string;
   image?: string;
   art?: string;
   /** Se risolve, entra sul campo di battaglia (CR 608.3) invece di andare al cimitero */
@@ -67,6 +69,7 @@ export function toCard(r: RawCard): Card {
     manaCost: r.mana_cost ?? f?.mana_cost ?? '',
     typeLine: r.printed_type_line ?? r.type_line ?? f?.printed_type_line ?? f?.type_line ?? '',
     text: r.printed_text ?? r.oracle_text ?? f?.printed_text ?? f?.oracle_text ?? '',
+    oracleText: r.oracle_text ?? f?.oracle_text ?? '',
     image: img?.normal,
     art: img?.art_crop,
     // tipo inglese (Oracle) del fronte: le carte bifronte lanciate usano il fronte
