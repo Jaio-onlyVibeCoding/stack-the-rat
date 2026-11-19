@@ -3,13 +3,18 @@ import { useLayoutEffect, useState } from 'preact/hooks';
 export interface Link {
   from: string;
   to: string;
+  /** Se l'oggetto bersaglio non esiste più, punta qui (es. il cimitero dove è finito) */
+  fallback?: string;
   color: string;
+  /** Bersaglio illegale: freccia rossa tratteggiata */
+  illegal?: boolean;
 }
 
 interface Segment {
   id: string;
   d: string;
   color: string;
+  dashed: boolean;
 }
 
 interface Point {
@@ -57,7 +62,7 @@ function curve(a: Point, b: Point): string {
  */
 export function Arrows({ links }: { links: Link[] }) {
   const [segments, setSegments] = useState<Segment[]>([]);
-  const signature = links.map((l) => `${l.from}>${l.to}>${l.color}`).join('|');
+  const signature = links.map((l) => `${l.from}>${l.to}>${l.fallback}>${l.color}>${l.illegal}`).join('|');
 
   useLayoutEffect(() => {
     let frame = 0;
@@ -67,8 +72,8 @@ export function Arrows({ links }: { links: Link[] }) {
         const next: Segment[] = [];
         for (const l of links) {
           const a = anchor(l.from);
-          const b = anchor(l.to);
-          if (a && b) next.push({ id: `${l.from}>${l.to}`, d: curve(a, b), color: l.color });
+          const b = anchor(l.to) ?? (l.fallback ? anchor(l.fallback) : null);
+          if (a && b) next.push({ id: `${l.from}>${l.to}`, d: curve(a, b), color: l.color, dashed: !!l.illegal });
         }
         setSegments((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       });
@@ -117,7 +122,7 @@ export function Arrows({ links }: { links: Link[] }) {
         <g key={s.id}>
           <path class="arrow-shadow" d={s.d} />
           <path
-            class="arrow-line"
+            class={s.dashed ? 'arrow-line dashed' : 'arrow-line'}
             d={s.d}
             style={{ stroke: s.color, markerEnd: `url(#arrowhead-${colors.indexOf(s.color)})` }}
           />

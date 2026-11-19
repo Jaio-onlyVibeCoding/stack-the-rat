@@ -47,7 +47,11 @@ export interface Card {
   text: string;
   image?: string;
   art?: string;
+  /** Se risolve, entra sul campo di battaglia (CR 608.3) invece di andare al cimitero */
+  isPermanent: boolean;
 }
+
+const PERMANENT_TYPES = /\b(Creature|Artifact|Enchantment|Planeswalker|Land|Battle)\b/;
 
 function toCard(r: RawCard): Card {
   // Le carte bifronte hanno immagini e testi dentro card_faces: usiamo il fronte
@@ -63,6 +67,8 @@ function toCard(r: RawCard): Card {
     text: r.printed_text ?? r.oracle_text ?? f?.printed_text ?? f?.oracle_text ?? '',
     image: img?.normal,
     art: img?.art_crop,
+    // tipo inglese (Oracle) del fronte: le carte bifronte lanciate usano il fronte
+    isPermanent: PERMANENT_TYPES.test(f?.type_line ?? r.type_line ?? ''),
   };
 }
 

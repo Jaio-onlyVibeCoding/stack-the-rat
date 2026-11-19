@@ -36,6 +36,15 @@ export function App() {
   const [perms, setPerms] = useState<Permanent[]>([]);
   /** uid dell'oggetto in pila che sta scegliendo i bersagli (null = nessuno) */
   const [targeting, setTargeting] = useState<number | null>(null);
+  /** Giocatore attivo (di chi è il turno) e chi ha la priorità */
+  const [active, setActive] = useState<PlayerId>('A');
+  const [priority, setPriority] = useState<PlayerId>('A');
+  /** Giocatori che hanno passato di fila, senza azioni in mezzo (CR 117.4) */
+  const [passed, setPassed] = useState<PlayerId[]>([]);
+  const [graveyards, setGraveyards] = useState<Record<PlayerId, Card[]>>({ A: [], B: [], C: [], D: [] });
+  /** Oggetti finiti al cimitero: chiave vecchia → cimitero del proprietario (per le frecce illegali) */
+  const [gone, setGone] = useState<Record<string, PlayerId>>({});
+  const [toast, setToast] = useState<string | null>(null);
   const stackCol = useRef<HTMLElement>(null);
 
   // Quando entra un nuovo oggetto in pila, scorri fino alla cima della pila (in basso)
@@ -43,6 +52,13 @@ export function App() {
     const el = stackCol.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [stack.length]);
+
+  // Il messaggio sparisce da solo dopo qualche secondo
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(id);
+  }, [toast]);
 
   const isFallback = preview && lang !== 'en' && preview.lang !== langInfo(lang).scryfall;
   const sourceIndex = stack.findIndex((s) => s.uid === targeting);
@@ -58,6 +74,75 @@ export function App() {
     setPerms((p) => p.filter((x) => x.controller !== gone));
     setStack((s) => s.filter((x) => x.controller !== gone));
     setTargeting(null);
+    if (active === gone || priority === gone) {
+      setActive('A');
+      setPriority('A');
+    }
+    setPassed([]);
+  }
+
+  // ---- Cimitero ----
+  /** Una carta che cambia zona diventa un nuovo oggetto (CR 400.7): i bersagli che la puntavano diventano illegali. */
+  function toGraveyard(card: Card, owner: PlayerId, oldKey?: string) {
+    setGraveyards((g) => ({ ...g, [owner]: [...g[owner], card] }));
+    if (oldKey) setGone((m) => ({ ...m, [oldKey]: owner }));
+  }
+
+  /** Un bersaglio è legale se esiste ancora (controllo semplice: le altre condizioni le valuta il giocatore). */
+  function isLegal(key: string): boolean {
+    const [kind, id] = key.split(':');
+    if (kind === 'player') return players.includes(id as PlayerId);
+    if (kind === 'perm') return perms.some((p) => p.uid === Number(id));
+    if (kind === 'stack') return stack.some((x) => x.uid === Number(id));
+    return false;
+  }
+
+  // ---- Priorità e risoluzione ----
+  const nextPlayer = (p: PlayerId) => players[(players.indexOf(p) + 1) % players.length];
+
+  function resolveTop() {
+    const top = stack[stack.length - 1];
+    if (!top) return;
+    const key = objKey.stack(top.uid);
+    const name = top.card.printedName;
+    const legal = top.targets.filter(isLegal);
+    setStack((s) => s.slice(0, -1));
+    if (targeting === top.uid) setTargeting(null);
+
+    if (top.targets.length > 0 && legal.length === 0) {
+      // CR 608.2b: tutti i bersagli illegali → non si risolve, va al cimitero
+      toGraveyard(top.card, top.controller, key);
+      setToast(t('fizzled').replace('{card}', name));
+    } else if (top.card.isPermanent) {
+      // CR 608.3: una magia permanente entra sul campo del suo controllore
+      setPerms((p) => [...p, { uid: newUid(), card: top.card, controller: top.controller }]);
+      setToast(t('resolvedPermanent').replace('{card}', name));
+    } else {
+      // CR 608.2n: istantaneo o stregoneria va nel cimitero del proprietario
+      toGraveyard(top.card, top.controller, key);
+      setToast(t(legal.length < top.targets.length ? 'partial' : 'resolved').replace('{card}', name));
+    }
+  }
+
+  /** CR 117.3d / 117.4: chi ha la priorità passa; se tutti passano di fila, risolve la cima della pila. */
+  function pass() {
+    const nowPassed = [...passed, priority];
+    if (nowPassed.length >= players.length) {
+      if (stack.length > 0) resolveTop();
+      else setToast(t('emptyPass'));
+      // CR 117.3b: dopo la risoluzione la priorità va al giocatore attivo
+      setPassed([]);
+      setPriority(active);
+    } else {
+      setPassed(nowPassed);
+      setPriority(nextPlayer(priority));
+    }
+  }
+
+  function changeActive(p: PlayerId) {
+    setActive(p);
+    setPriority(p);
+    setPassed([]);
   }
 
   // ---- Carte ----
@@ -65,6 +150,9 @@ export function App() {
     if (!preview) return;
     setStack((s) => [...s, { uid: newUid(), card: preview, controller, targets: [] }]);
     setPreview(null);
+    // CR 117.3c: chi lancia una magia riceve di nuovo la priorità; i passaggi precedenti non contano più
+    setPriority(controller);
+    setPassed([]);
   }
   function putOnBattlefield(controller: PlayerId) {
     if (!preview) return;
@@ -115,7 +203,16 @@ export function App() {
   }
 
   const links: Link[] = stack.flatMap((it) =>
-    it.targets.map((to) => ({ from: objKey.stack(it.uid), to, color: PLAYER_COLOR[it.controller] })),
+    it.targets.map((to) => {
+      const illegal = !isLegal(to);
+      return {
+        from: objKey.stack(it.uid),
+        to,
+        fallback: gone[to] ? `gy:${gone[to]}` : undefined,
+        color: illegal ? '#e06c5a' : PLAYER_COLOR[it.controller],
+        illegal,
+      };
+    }),
   );
 
   const objProps = (key: string, extraClass: string) => ({
@@ -156,9 +253,20 @@ export function App() {
       <div class={`table ${players.length === 2 ? 'two' : 'multi'}`}>
         {players.map((id) => (
           <section key={id} class="zone" style={{ gridArea: id, '--pc': PLAYER_COLOR[id] }}>
-            <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
-              {t('player')} {id}
-            </button>
+            <div class="zone-head">
+              <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
+                {t('player')} {id}
+                {priority === id && <span class="prio-mark" title={t('priority')} />}
+              </button>
+              <div class="gy" data-obj={`gy:${id}`} title={t('graveyard')}>
+                {graveyards[id].length > 0 && (
+                  <img src={graveyards[id][graveyards[id].length - 1].image} alt="" />
+                )}
+                <span>
+                  {t('graveyard')} {graveyards[id].length}
+                </span>
+              </div>
+            </div>
             <div class="field">
               {perms.filter((p) => p.controller === id).length === 0 && <p class="status">{t('battlefieldEmpty')}</p>}
               {perms
@@ -169,10 +277,12 @@ export function App() {
                     <button
                       type="button"
                       class="remove-sm"
-                      aria-label={`${t('remove')} ${p.card.printedName}`}
+                      aria-label={`${t('toGraveyard')}: ${p.card.printedName}`}
+                      title={t('toGraveyard')}
                       onClick={(e) => {
                         e.stopPropagation();
                         setPerms((all) => all.filter((x) => x.uid !== p.uid));
+                        toGraveyard(p.card, p.controller, objKey.perm(p.uid));
                       }}
                     >
                       ✕
@@ -184,6 +294,34 @@ export function App() {
         ))}
 
         <section class="stack-col" ref={stackCol}>
+          <div class="priority" style={{ '--pc': PLAYER_COLOR[priority] }}>
+            <label class="turn">
+              {t('turn')}
+              <select value={active} onChange={(e) => changeActive((e.target as HTMLSelectElement).value as PlayerId)}>
+                {players.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div class="prio-row">
+              <span class="prio-who">
+                {t('priority')}: <b>{priority}</b>
+              </span>
+              <button type="button" class="pass" onClick={pass}>
+                {t('pass')}
+              </button>
+            </div>
+            <div class="passes" title={t('passHelp')}>
+              {players.map((p) => (
+                <span key={p} class={passed.includes(p) ? 'passed' : ''} style={{ '--pc': PLAYER_COLOR[p] }}>
+                  {p}
+                  {passed.includes(p) ? ' ✓' : ''}
+                </span>
+              ))}
+            </div>
+          </div>
           <h2>{t('stack')}</h2>
           {stack.length === 0 ? (
             <p class="status">{t('stackEmpty')}</p>
@@ -244,6 +382,12 @@ export function App() {
       </div>
 
       <Arrows links={links} />
+
+      {toast && (
+        <div class="toast" role="status" onClick={() => setToast(null)}>
+          {toast}
+        </div>
+      )}
 
       {preview && (
         <div class="sheet-backdrop" onClick={() => setPreview(null)}>
