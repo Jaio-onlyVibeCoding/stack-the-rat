@@ -368,6 +368,11 @@ export function App() {
 
   /** Dove agganciare una freccia se la carta bersaglio non è visibile (pannello chiuso). */
   function zoneAnchor(key: string): string | undefined {
+    if (key.startsWith('perm:')) {
+      // permanente in un campo di battaglia chiuso: la freccia punta al nome del giocatore
+      const o = g.objs.find((x) => x.uid === Number(key.slice(5)));
+      return o && collapsed.includes(o.controller) ? objKey.player(o.controller) : undefined;
+    }
     if (!key.startsWith('card:')) return undefined;
     const o = g.objs.find((x) => x.uid === Number(key.slice(5)));
     if (!o) return undefined;
@@ -657,6 +662,7 @@ export function App() {
                           <span>{it.card.printedName}</span>
                         </div>
                         {it.card.art && <img class="ability-art" src={it.card.art} alt="" />}
+                        <p class="ability-source">{it.card.printedName}</p>
                         <p class="ability-kind">{t(it.kind as Key)}</p>
                         <p class="ability-text">{it.text ?? '—'}</p>
                       </div>
