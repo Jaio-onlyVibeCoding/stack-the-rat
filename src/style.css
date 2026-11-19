@@ -107,10 +107,15 @@ input { width: 100%; }
 }
 .perm img { width: 100%; height: 100%; display: block; }
 .perm span { display: grid; place-items: center; height: 100%; padding: 4px; font-size: 11px; background: var(--line); }
-.remove-sm {
-  position: absolute; top: 0; inset-inline-end: 0; width: 28px; height: 28px;
-  border: 0; border-end-start-radius: 8px; background: #000b; color: #fff; font-size: 12px; cursor: pointer;
+.perm-tools {
+  position: absolute; top: 0; inset-inline-end: 0; display: flex;
+  border-end-start-radius: 8px; overflow: hidden;
 }
+.perm-tools button {
+  width: 26px; height: 26px; border: 0; background: #000c; color: #fff; cursor: pointer;
+  display: grid; place-items: center; padding: 0;
+}
+.perm-tools button + button { border-inline-start: 1px solid #fff3; }
 
 /* ---------- Pila ---------- */
 .stack-col {
@@ -164,7 +169,7 @@ input { width: 100%; }
 .tgt.on { background: var(--danger); }
 
 /* ---------- Scelta dei bersagli ---------- */
-.targeting .remove-sm, .targeting .pile-card:not(.is-source) .card-tools { visibility: hidden; }
+.targeting .perm-tools, .targeting .pile-card:not(.is-source) .card-tools { visibility: hidden; }
 .targeting .can-target { cursor: crosshair; outline: 3px dashed #fff; outline-offset: -3px; }
 .pile-card.is-source { filter: none; box-shadow: 0 0 0 3px var(--pc), 0 -6px 18px #000a; }
 
@@ -231,9 +236,7 @@ input { width: 100%; }
 /* ---------- Testa della zona: giocatore + cimitero ---------- */
 .zone-head { display: flex; align-items: stretch; background: var(--pc); }
 .zone-head .player-tag { flex: 1; display: flex; align-items: center; gap: 8px; }
-.prio-mark {
-  width: 12px; height: 12px; border-radius: 50%; background: #15120c; box-shadow: 0 0 0 3px #fff8;
-}
+
 .zone-head .player-tag { white-space: nowrap; overflow: hidden; }
 /* Cimitero: miniatura dell'ultima carta + numero di carte */
 .gy { position: relative; display: grid; place-items: center; padding: 4px 8px; flex: none; }
@@ -246,8 +249,69 @@ input { width: 100%; }
   display: grid; place-items: center;
 }
 
-.toast {
-  position: fixed; z-index: 90; inset-inline: 12px; bottom: max(12px, env(safe-area-inset-bottom));
-  margin: 0 auto; max-width: 520px; padding: 12px 16px; border-radius: 12px;
-  background: #fff; color: #15120c; font-size: 14px; box-shadow: 0 10px 30px #000a; cursor: pointer;
+
+
+/* ---------- Chi ha la priorità ---------- */
+.zone.has-priority { box-shadow: 0 0 0 2px var(--pc), 0 0 18px color-mix(in srgb, var(--pc) 55%, transparent); }
+.prio-strip {
+  display: flex; align-items: center; gap: 6px; padding: 3px 10px;
+  background: color-mix(in srgb, var(--pc) 22%, var(--panel)); color: var(--ink);
+  font-size: 13px; font-weight: 600; border-bottom: 1px solid color-mix(in srgb, var(--pc) 45%, transparent);
+}
+.prio-arrow { color: var(--pc); font-size: 11px; animation: nudge 1.2s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: translateX(3px); } }
+
+/* Risoluzione in corso: nessuno ha priorità */
+.priority.nobody { background: #2a1d0aee; border-bottom-color: var(--accent); }
+.resolving-msg { margin: 0; font-size: 13px; line-height: 1.35; color: #f4d9a6; }
+.finish {
+  min-height: 40px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--accent); color: #1a1408; font-weight: 700;
+}
+.pile-card.is-resolving { filter: none; box-shadow: 0 0 0 3px var(--accent), 0 0 24px #e0a43a99; }
+.pile-card.is-resolving .badge { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+
+/* ---------- Barre espandibili: esilio (in alto) e storico (in basso) ---------- */
+.bar { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; flex: none; }
+.bar-head {
+  width: 100%; min-height: 40px; display: flex; align-items: center; gap: 8px;
+  padding: 0 12px; border: 0; background: none; cursor: pointer; text-align: start;
+}
+.bar-title { font-weight: 600; font-size: 14px; white-space: nowrap; }
+.dots { flex: 1; display: flex; gap: 3px; overflow: hidden; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.exile-list {
+  display: flex; gap: 8px; overflow-x: auto; padding: 4px 12px 12px;
+  max-height: 34dvh;
+}
+.exiled { position: relative; margin: 0; flex: none; width: 64px; }
+.exiled img, .exiled span {
+  width: 100%; aspect-ratio: 488 / 680; display: block; border-radius: 5px;
+  outline: 3px solid var(--pc); outline-offset: -1px;
+}
+.exiled span { display: grid; place-items: center; font-size: 10px; background: var(--line); padding: 2px; }
+.exiled figcaption {
+  position: absolute; bottom: 3px; inset-inline-start: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--pc); color: #15120c; font-size: 11px; font-weight: 700; display: grid; place-items: center;
+}
+
+.history-bar { display: flex; flex-direction: column; transition: border-color .3s; }
+.history-bar.flash { border-color: var(--accent); }
+.bar-row { display: flex; align-items: stretch; }
+.undo {
+  width: 48px; flex: none; border: 0; border-inline-end: 1px solid var(--line);
+  background: none; cursor: pointer; display: grid; place-items: center;
+}
+.undo:disabled { opacity: .3; cursor: default; }
+.history-bar .bar-head { flex: 1; }
+.last { flex: 1; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log {
+  list-style: none; margin: 0; padding: 8px 12px; max-height: 34dvh; overflow-y: auto;
+  border-bottom: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px;
+}
+.log time { color: var(--muted); font-variant-numeric: tabular-nums; margin-inline-end: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .prio-arrow, .pile-card.is-resolving .badge { animation: none; }
 }
