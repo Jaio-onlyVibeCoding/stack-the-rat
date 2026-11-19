@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { autocomplete, getCard, type Card } from './scryfall';
+import { getCard, suggest, type Card, type Suggestion } from './scryfall';
 import { langInfo, useI18n } from './i18n';
 
 type Status = 'idle' | 'loading' | 'empty' | 'error';
@@ -7,7 +7,7 @@ type Status = 'idle' | 'loading' | 'empty' | 'error';
 export function CardSearch({ onPick }: { onPick: (c: Card) => void }) {
   const { t, lang } = useI18n();
   const [q, setQ] = useState('');
-  const [names, setNames] = useState<string[]>([]);
+  const [names, setNames] = useState<Suggestion[]>([]);
   const [status, setStatus] = useState<Status>('idle');
 
   // Aspetta 300 ms dopo l'ultima lettera prima di chiedere a Scryfall
@@ -22,7 +22,7 @@ export function CardSearch({ onPick }: { onPick: (c: Card) => void }) {
     const timer = setTimeout(async () => {
       setStatus('loading');
       try {
-        const res = await autocomplete(query, ac.signal);
+        const res = await suggest(query, ac.signal);
         setNames(res);
         setStatus(res.length ? 'idle' : 'empty');
       } catch {
@@ -67,9 +67,10 @@ export function CardSearch({ onPick }: { onPick: (c: Card) => void }) {
       {names.length > 0 && (
         <ul class="suggestions">
           {names.map((n) => (
-            <li key={n}>
-              <button type="button" onClick={() => pick(n)}>
-                {n}
+            <li key={n.name}>
+              <button type="button" onClick={() => pick(n.name)}>
+                {n.printed ?? n.name}
+                {n.printed && <small>{n.name}</small>}
               </button>
             </li>
           ))}

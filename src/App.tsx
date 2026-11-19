@@ -15,8 +15,7 @@ export function App() {
   const [preview, setPreview] = useState<Card | null>(null);
   const [stack, setStack] = useState<StackEntry[]>([]);
 
-  const wanted = langInfo(lang).scryfall;
-  const isFallback = preview && lang !== 'en' && preview.lang !== wanted;
+  const isFallback = preview && lang !== 'en' && preview.lang !== langInfo(lang).scryfall;
 
   function addToStack() {
     if (!preview) return;
@@ -46,9 +45,14 @@ export function App() {
         <section class="preview">
           {preview.image && <img src={preview.image} alt={preview.printedName} />}
           {isFallback && <p class="status">{t('fallback')}</p>}
-          <button type="button" class="primary" onClick={addToStack}>
-            {t('add')}
-          </button>
+          <div class="actions">
+            <button type="button" class="secondary" onClick={() => setPreview(null)}>
+              {t('cancel')}
+            </button>
+            <button type="button" class="primary" onClick={addToStack}>
+              {t('add')}
+            </button>
+          </div>
         </section>
       )}
 
@@ -57,25 +61,35 @@ export function App() {
         {stack.length === 0 ? (
           <p class="status">{t('stackEmpty')}</p>
         ) : (
-          <ol>
-            {[...stack].reverse().map((e, i) => (
-              <li key={e.uid} class={i === 0 ? 'item is-top' : 'item'}>
-                {e.card.art && <img src={e.card.art} alt="" />}
-                <div class="info">
-                  {i === 0 && <span class="badge">{t('top')}</span>}
-                  <strong>{e.card.printedName}</strong>
-                  <span class="type">{e.card.typeLine}</span>
-                </div>
-                <button
-                  type="button"
-                  class="ghost"
-                  aria-label={`${t('remove')} ${e.card.printedName}`}
-                  onClick={() => setStack((s) => s.filter((x) => x.uid !== e.uid))}
+          // Ordine visivo: la carta più vecchia sta in alto e dietro; ogni nuova carta
+          // si sovrappone sotto. L'ultima (in cima allo stack) è intera e illuminata.
+          <ol class="pile">
+            {stack.map((e, i) => {
+              const isTop = i === stack.length - 1;
+              return (
+                <li
+                  key={e.uid}
+                  class={isTop ? 'pile-card is-top' : 'pile-card'}
+                  style={{ zIndex: i + 1 }}
+                  aria-current={isTop ? 'true' : undefined}
                 >
-                  ✕
-                </button>
-              </li>
-            ))}
+                  {e.card.image ? (
+                    <img src={e.card.image} alt={e.card.printedName} />
+                  ) : (
+                    <div class="no-image">{e.card.printedName}</div>
+                  )}
+                  {isTop && <span class="badge">{t('top')}</span>}
+                  <button
+                    type="button"
+                    class="remove"
+                    aria-label={`${t('remove')} ${e.card.printedName}`}
+                    onClick={() => setStack((s) => s.filter((x) => x.uid !== e.uid))}
+                  >
+                    ✕
+                  </button>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>

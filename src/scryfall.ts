@@ -66,10 +66,41 @@ function toCard(r: RawCard): Card {
   };
 }
 
-/** Suggerimenti di nomi (in inglese) mentre si scrive. */
-export async function autocomplete(q: string, signal?: AbortSignal): Promise<string[]> {
-  const r = await get<{ data: string[] }>(`/cards/autocomplete?q=${encodeURIComponent(q)}`, signal);
-  return r?.data ?? [];
+export interface Suggestion {
+  /** Nome inglese (Oracle): identifica la carta */
+  name: string;
+  /** Nome stampato in un'altra lingua, se la ricerca ha trovato quello */
+  printed?: string;
+}
+
+/**
+ * Suggerimenti mentre si scrive, in qualsiasi lingua.
+ * 1) autocomplete di Scryfall: nomi inglesi che iniziano con il testo;
+ * 2) ricerca con lang:any: trova anche i nomi stampati in altre lingue (es. "fulmine").
+ */
+export async function suggest(q: string, signal?: AbortSignal): Promise<Suggestion[]> {
+  const [auto, intl] = await Promise.all([
+    get<{ data: string[] }>(`/cards/autocomplete?q=${encodeURIComponent(q)}`, signal),
+    get<{ data: RawCard[] }>(
+      `/cards/search?q=${encodeURIComponent(`${q} lang:any`)}&unique=cards&order=name`,
+      signal,
+      // la ricerca estesa è un extra: se fallisce restano i suggerimenti inglesi
+    ).catch(() => null),
+  ]);
+  const out: Suggestion[] = (auto?.data ?? []).map((name) => ({ name }));
+  const seen = new Set(out.map((s) => s.name));
+  const needle = q.toLowerCase();
+  for (const c of intl?.data ?? []) {
+    if (seen.has(c.name)) continue;
+    const printed = c.printed_name ?? c.card_faces?.[0]?.printed_name;
+    // Teniamo solo le carte trovate per nome (non per testo o tipo)
+    const hit = [c.name, printed].some((n) => n?.toLowerCase().includes(needle));
+    if (!hit) continue;
+    seen.add(c.name);
+    out.push({ name: c.name, printed: printed && printed !== c.name ? printed : undefined });
+    if (out.length >= 25) break;
+  }
+  return out;
 }
 
 const cache = new Map<string, Card>();
@@ -78,7 +109,7 @@ const cache = new Map<string, Card>();
  * Carta per nome esatto. Se è indicata una lingua, prova la stampa più recente in quella lingua;
  * se non esiste, usa la versione inglese.
  */
-export async function getCard(name: string, scryLang: string | null): Promise<Card | null> {
+export async function getCard(name: string, scryLang: string): Promise<Card | null> {
   const key = `${name}|${scryLang ?? 'en'}`;
   const hit = cache.get(key);
   if (hit) return hit;
@@ -87,7 +118,10 @@ export async function getCard(name: string, scryLang: string | null): Promise<Ca
   if (scryLang && scryLang !== 'en') {
     const q = encodeURIComponent(`!"${name}" lang:${scryLang}`);
     const r = await get<{ data: RawCard[] }>(`/cards/search?q=${q}&unique=prints&order=released&dir=desc`);
-    if (r?.data?.length) card = toCard(r.data[0]);
+    // Solo carte con lo stesso nome completo: "!" di Scryfall trova anche carte che hanno
+    // quel nome su una faccia sola (es. Emeritus of Conflict // Lightning Bolt)
+    const exact = r?.data?.find((c) => c.name === name);
+    if (exact) card = toCard(exact);
   }
   if (!card) {
     const r = await get<RawCard>(`/cards/named?exact=${encodeURIComponent(name)}`);

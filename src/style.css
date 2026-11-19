@@ -52,12 +52,18 @@ input { width: 100%; }
   width: 100%; min-height: 44px; text-align: start;
   background: none; border: 0; border-radius: 8px; padding: 0 10px; cursor: pointer;
 }
+.suggestions small { display: block; color: var(--muted); font-size: 13px; margin-top: -4px; padding-bottom: 6px; }
 .suggestions button:hover, .suggestions button:focus-visible { background: var(--line); }
 
 .preview { display: grid; justify-items: center; gap: 12px; margin-top: 16px; }
 .preview img {
   width: min(100%, 320px); aspect-ratio: 488 / 680;
   border-radius: 4.75% / 3.4%; box-shadow: 0 10px 30px #0008;
+}
+.actions { display: flex; gap: 8px; }
+.secondary {
+  min-height: 44px; padding: 0 20px; border: 1px solid var(--line); border-radius: 10px;
+  background: none; cursor: pointer;
 }
 .primary {
   min-height: 44px; padding: 0 20px; border: 0; border-radius: 10px;
@@ -69,17 +75,32 @@ input { width: 100%; }
 }
 .ghost:hover { background: var(--line); color: var(--ink); }
 
-.stack ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.item {
-  display: flex; align-items: center; gap: 12px; padding: 8px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+/* Pila: carte sovrapposte in verticale. Delle carte sotto si vede solo la fascia del nome. */
+.pile {
+  --w: min(86vw, 300px);
+  --h: calc(var(--w) * 680 / 488);
+  --peek: calc(var(--w) * 0.16);
+  list-style: none; margin: 0; padding: 0;
+  display: grid; justify-items: center;
 }
-.item.is-top { border-color: var(--accent); }
-.item img { width: 64px; height: 47px; object-fit: cover; border-radius: 6px; flex: none; }
-.info { display: grid; flex: 1; }
-.info .type { color: var(--muted); font-size: 13px; }
-.badge {
-  justify-self: start; font-size: 12px; font-weight: 600; color: var(--accent);
+.pile-card {
+  position: relative; width: var(--w); height: var(--h);
+  border-radius: 4.75% / 3.4%; overflow: hidden;
+  box-shadow: 0 -6px 18px #000a;
+  transition: filter .2s;
+}
+.pile-card + .pile-card { margin-top: calc(var(--peek) - var(--h)); }
+.pile-card img, .no-image { width: 100%; height: 100%; display: block; }
+.no-image { display: grid; place-items: center; background: var(--panel); padding: 16px; text-align: center; }
+.pile-card:not(.is-top) { filter: brightness(.5) saturate(.8); }
+.pile-card.is-top { box-shadow: 0 -6px 18px #000a, 0 0 0 2px var(--accent); }
+.pile-card .badge {
+  position: absolute; inset-inline-start: 8px; bottom: 8px;
+  background: var(--accent); color: #1a1408; padding: 2px 10px; border-radius: 999px;
+}
+.pile-card .remove {
+  position: absolute; top: 0; inset-inline-end: 0; width: 44px; height: 44px;
+  border: 0; background: #000a; color: #fff; border-end-start-radius: 12px; cursor: pointer;
 }
 
 .credits { color: var(--muted); font-size: 12px; margin-top: 32px; }
