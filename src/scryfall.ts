@@ -87,19 +87,26 @@ export async function suggest(q: string, signal?: AbortSignal): Promise<Suggesti
       // la ricerca estesa è un extra: se fallisce restano i suggerimenti inglesi
     ).catch(() => null),
   ]);
-  const out: Suggestion[] = (auto?.data ?? []).map((name) => ({ name }));
-  const seen = new Set(out.map((s) => s.name));
-  const needle = q.toLowerCase();
+  // Ordine: nome identico al testo, poi nomi che iniziano col testo, poi il resto
+  const needle = q.trim().toLowerCase();
+  const rank = (s: Suggestion) => {
+    const names = [s.printed, s.name].filter(Boolean).map((n) => n!.toLowerCase());
+    if (names.some((n) => n === needle)) return 0;
+    if (names.some((n) => n.startsWith(needle))) return 1;
+    return 2;
+  };
+  const all: Suggestion[] = (auto?.data ?? []).map((name) => ({ name }));
+  const seen = new Set(all.map((s) => s.name));
   for (const c of intl?.data ?? []) {
     if (seen.has(c.name)) continue;
     const printed = c.printed_name ?? c.card_faces?.[0]?.printed_name;
     // Teniamo solo le carte trovate per nome (non per testo o tipo)
-    const hit = [c.name, printed].some((n) => n?.toLowerCase().includes(needle));
-    if (!hit) continue;
+    if (![c.name, printed].some((n) => n?.toLowerCase().includes(needle))) continue;
     seen.add(c.name);
-    out.push({ name: c.name, printed: printed && printed !== c.name ? printed : undefined });
-    if (out.length >= 25) break;
+    all.push({ name: c.name, printed: printed && printed !== c.name ? printed : undefined });
   }
+  // sort è stabile: a parità di rango resta l'ordine di Scryfall
+  const out = all.sort((a, b) => rank(a) - rank(b)).slice(0, 25);
   return out;
 }
 
