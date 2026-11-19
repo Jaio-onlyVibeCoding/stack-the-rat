@@ -258,13 +258,18 @@ export function App() {
                 {t('player')} {id}
                 {priority === id && <span class="prio-mark" title={t('priority')} />}
               </button>
-              <div class="gy" data-obj={`gy:${id}`} title={t('graveyard')}>
-                {graveyards[id].length > 0 && (
+              <div
+                class="gy"
+                data-obj={`gy:${id}`}
+                title={t('graveyard')}
+                aria-label={`${t('graveyard')}: ${graveyards[id].length}`}
+              >
+                {graveyards[id].length > 0 ? (
                   <img src={graveyards[id][graveyards[id].length - 1].image} alt="" />
+                ) : (
+                  <span class="gy-empty" />
                 )}
-                <span>
-                  {t('graveyard')} {graveyards[id].length}
-                </span>
+                <span class="gy-count">{graveyards[id].length}</span>
               </div>
             </div>
             <div class="field">

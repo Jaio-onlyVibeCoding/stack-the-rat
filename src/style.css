@@ -234,11 +234,17 @@ input { width: 100%; }
 .prio-mark {
   width: 12px; height: 12px; border-radius: 50%; background: #15120c; box-shadow: 0 0 0 3px #fff8;
 }
-.gy {
-  display: flex; align-items: center; gap: 6px; padding: 0 8px;
-  font-size: 12px; color: #15120c; font-weight: 600; white-space: nowrap;
+.zone-head .player-tag { white-space: nowrap; overflow: hidden; }
+/* Cimitero: miniatura dell'ultima carta + numero di carte */
+.gy { position: relative; display: grid; place-items: center; padding: 4px 8px; flex: none; }
+.gy img, .gy-empty { height: 32px; aspect-ratio: 488 / 680; border-radius: 3px; display: block; }
+.gy img { filter: grayscale(.4); }
+.gy-empty { border: 1.5px dashed #15120c88; }
+.gy-count {
+  position: absolute; bottom: 1px; inset-inline-end: 3px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 999px; background: #15120c; color: #fff; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center;
 }
-.gy img { height: 32px; border-radius: 3px; filter: grayscale(.4); }
 
 .toast {
   position: fixed; z-index: 90; inset-inline: 12px; bottom: max(12px, env(safe-area-inset-bottom));
