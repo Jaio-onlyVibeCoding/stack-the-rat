@@ -1,0 +1,11 @@
+{
+  "name": "Stack The Rat",
+  "short_name": "Stack",
+  "description": "Visualizza lo stack di Magic: The Gathering",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14161c",
+  "theme_color": "#14161c",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

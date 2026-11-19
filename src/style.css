@@ -1,0 +1,19 @@
+:root {
+  color-scheme: dark;
+  --bg: #14161c;
+  --ink: #e8e6e1;
+  --muted: #8a8f9c;
+  --accent: #e0a43a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+.shell {
+  padding: max(24px, env(safe-area-inset-top)) 20px 24px;
+}
+h1 { color: var(--accent); margin: 0 0 8px; }
+.hint { color: var(--muted); font-size: 14px; }
