@@ -23,12 +23,21 @@ function anchor(key: string): Point | null {
   if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.width === 0) return null;
+  let p: Point;
   if (el.dataset.anchor === 'strip') {
     const peek = Math.max(r.width * 0.16, 40);
     // a sinistra del centro, per non finire sotto i pulsanti mirino / rimuovi
-    return { x: r.left + r.width * 0.35, y: r.top + Math.min(peek, r.height) / 2 };
+    p = { x: r.left + r.width * 0.35, y: r.top + Math.min(peek, r.height) / 2 };
+  } else {
+    p = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  // Se l'oggetto è fuori vista (pila o campo scorsi), aggancia la freccia al bordo dell'area
+  const box = el.closest('.stack-col, .field')?.getBoundingClientRect();
+  if (box) {
+    p.x = Math.min(Math.max(p.x, box.left + 6), box.right - 6);
+    p.y = Math.min(Math.max(p.y, box.top + 6), box.bottom - 6);
+  }
+  return p;
 }
 
 /** Curva morbida da a a b, piegata di lato per non coprire le carte in linea retta. */

@@ -118,10 +118,10 @@ input { width: 100%; }
   overflow-y: auto; overscroll-behavior: contain;
   padding: 10px 8px 16px;
   border-radius: 12px; background: #0e1015; border: 1px solid var(--line);
-  container-type: inline-size;
+  container-type: size; /* la carta si adatta a larghezza e altezza della colonna */
 }
 .pile {
-  --w: min(94cqi, 300px);
+  --w: min(94cqi, 300px, 58cqb);
   --h: calc(var(--w) * 680 / 488);
   --peek: max(calc(var(--w) * 0.16), 40px); /* fascia visibile delle carte sotto */
   list-style: none; margin: 0; padding: 0;
