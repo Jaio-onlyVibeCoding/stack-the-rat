@@ -1,32 +1,144 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { Arrows, type Link } from './Arrows';
 import { CardSearch } from './CardSearch';
+import {
+  ALL_PLAYERS,
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  PLAYER_COLOR,
+  newUid,
+  objKey,
+  type Permanent,
+  type PlayerId,
+  type StackItem,
+} from './game';
 import { LANGS, langInfo, setLang, useI18n, type Lang } from './i18n';
 import type { Card } from './scryfall';
 
-interface StackEntry {
-  uid: number;
-  card: Card;
-}
-
-let uid = 0;
+const Crosshair = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="icon">
+    <circle cx="12" cy="12" r="7" />
+    <circle cx="12" cy="12" r="2" />
+    <path d="M12 1v5M12 18v5M1 12h5M18 12h5" />
+  </svg>
+);
+const Cross = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="icon">
+    <path d="M5 5l14 14M19 5L5 19" />
+  </svg>
+);
 
 export function App() {
   const { t, lang } = useI18n();
+  const [players, setPlayers] = useState<PlayerId[]>(['A', 'B']);
   const [preview, setPreview] = useState<Card | null>(null);
-  const [stack, setStack] = useState<StackEntry[]>([]);
+  const [stack, setStack] = useState<StackItem[]>([]);
+  const [perms, setPerms] = useState<Permanent[]>([]);
+  /** uid dell'oggetto in pila che sta scegliendo i bersagli (null = nessuno) */
+  const [targeting, setTargeting] = useState<number | null>(null);
+  const stackCol = useRef<HTMLElement>(null);
+
+  // Quando entra un nuovo oggetto in pila, scorri fino alla cima della pila (in basso)
+  useEffect(() => {
+    const el = stackCol.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [stack.length]);
 
   const isFallback = preview && lang !== 'en' && preview.lang !== langInfo(lang).scryfall;
+  const sourceIndex = stack.findIndex((s) => s.uid === targeting);
 
-  function addToStack() {
-    if (!preview) return;
-    setStack((s) => [...s, { uid: ++uid, card: preview }]);
-    setPreview(null);
+  // ---- Giocatori ----
+  function addPlayer() {
+    if (players.length < MAX_PLAYERS) setPlayers(ALL_PLAYERS.slice(0, players.length + 1));
+  }
+  function removePlayer() {
+    if (players.length <= MIN_PLAYERS) return;
+    const gone = players[players.length - 1];
+    setPlayers(players.slice(0, -1));
+    setPerms((p) => p.filter((x) => x.controller !== gone));
+    setStack((s) => s.filter((x) => x.controller !== gone));
+    setTargeting(null);
   }
 
+  // ---- Carte ----
+  function putOnStack(controller: PlayerId) {
+    if (!preview) return;
+    setStack((s) => [...s, { uid: newUid(), card: preview, controller, targets: [] }]);
+    setPreview(null);
+  }
+  function putOnBattlefield(controller: PlayerId) {
+    if (!preview) return;
+    setPerms((p) => [...p, { uid: newUid(), card: preview, controller }]);
+    setPreview(null);
+  }
+  function removeFromStack(uid: number) {
+    setStack((s) => s.filter((x) => x.uid !== uid));
+    if (targeting === uid) setTargeting(null);
+  }
+
+  // ---- Bersagli ----
+  /** Una magia/abilità può bersagliare giocatori, permanenti e oggetti già in pila sotto di lei (CR 115.5). */
+  function canTarget(key: string): boolean {
+    if (targeting === null) return false;
+    if (key.startsWith('stack:')) {
+      const i = stack.findIndex((s) => objKey.stack(s.uid) === key);
+      return i >= 0 && i < sourceIndex;
+    }
+    return true;
+  }
+  function onObjectTap(key: string) {
+    if (!canTarget(key)) return;
+    setStack((s) =>
+      s.map((it) =>
+        it.uid !== targeting
+          ? it
+          : {
+              ...it,
+              targets: it.targets.includes(key) ? it.targets.filter((k) => k !== key) : [...it.targets, key],
+            },
+      ),
+    );
+  }
+  function onTargetButton(item: StackItem) {
+    if (targeting === item.uid || item.targets.length > 0) {
+      // Icona X: cancella tutte le frecce di questo oggetto
+      setStack((s) => s.map((it) => (it.uid === item.uid ? { ...it, targets: [] } : it)));
+      setTargeting(null);
+    } else {
+      setTargeting(item.uid);
+    }
+  }
+  // Tocco su uno spazio vuoto: fine della scelta dei bersagli
+  function onBackgroundTap(e: MouseEvent) {
+    if (targeting === null) return;
+    if (!(e.target as Element).closest('[data-obj], .tgt')) setTargeting(null);
+  }
+
+  const links: Link[] = stack.flatMap((it) =>
+    it.targets.map((to) => ({ from: objKey.stack(it.uid), to, color: PLAYER_COLOR[it.controller] })),
+  );
+
+  const objProps = (key: string, extraClass: string) => ({
+    'data-obj': key,
+    class: `${extraClass}${canTarget(key) ? ' can-target' : ''}`,
+    onClick: () => onObjectTap(key),
+  });
+
   return (
-    <main class="shell">
+    <main class={`shell${targeting !== null ? ' targeting' : ''}`} onClick={onBackgroundTap}>
       <header class="top">
         <h1>Stack The Rat</h1>
+        <div class="player-count" role="group" aria-label={t('players')}>
+          <button type="button" onClick={removePlayer} disabled={players.length <= MIN_PLAYERS} aria-label={t('removePlayer')}>
+            −
+          </button>
+          <span>
+            {players.length} {t('players').toLowerCase()}
+          </span>
+          <button type="button" onClick={addPlayer} disabled={players.length >= MAX_PLAYERS} aria-label={t('addPlayer')}>
+            +
+          </button>
+        </div>
         <label class="lang">
           <span class="sr-only">{t('language')}</span>
           <select value={lang} onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}>
@@ -39,62 +151,135 @@ export function App() {
         </label>
       </header>
 
-      <CardSearch onPick={setPreview} />
+      {targeting !== null ? <p class="hint">{t('targetingHint')}</p> : <CardSearch onPick={setPreview} />}
+
+      <div class={`table ${players.length === 2 ? 'two' : 'multi'}`}>
+        {players.map((id) => (
+          <section key={id} class="zone" style={{ gridArea: id, '--pc': PLAYER_COLOR[id] }}>
+            <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
+              {t('player')} {id}
+            </button>
+            <div class="field">
+              {perms.filter((p) => p.controller === id).length === 0 && <p class="status">{t('battlefieldEmpty')}</p>}
+              {perms
+                .filter((p) => p.controller === id)
+                .map((p) => (
+                  <div key={p.uid} {...objProps(objKey.perm(p.uid), 'perm')}>
+                    {p.card.image ? <img src={p.card.image} alt={p.card.printedName} /> : <span>{p.card.printedName}</span>}
+                    <button
+                      type="button"
+                      class="remove-sm"
+                      aria-label={`${t('remove')} ${p.card.printedName}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPerms((all) => all.filter((x) => x.uid !== p.uid));
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </section>
+        ))}
+
+        <section class="stack-col" ref={stackCol}>
+          <h2>{t('stack')}</h2>
+          {stack.length === 0 ? (
+            <p class="status">{t('stackEmpty')}</p>
+          ) : (
+            // La carta più vecchia sta in alto e dietro; l'ultima (in cima alla pila) è intera e illuminata
+            <ol class="pile">
+              {stack.map((it, i) => {
+                const key = objKey.stack(it.uid);
+                const isTop = i === stack.length - 1;
+                const isSource = targeting === it.uid;
+                const showCross = isSource || it.targets.length > 0;
+                return (
+                  <li
+                    key={it.uid}
+                    {...objProps(key, `pile-card${isTop ? ' is-top' : ''}${isSource ? ' is-source' : ''}`)}
+                    data-anchor="strip"
+                    style={{ zIndex: i + 1, '--pc': PLAYER_COLOR[it.controller] }}
+                  >
+                    {it.card.image ? (
+                      <img src={it.card.image} alt={it.card.printedName} />
+                    ) : (
+                      <div class="no-image">{it.card.printedName}</div>
+                    )}
+                    <span class="ctrl">{it.controller}</span>
+                    {isTop && <span class="badge">{t('top')}</span>}
+                    <div class="card-tools">
+                      <button
+                        type="button"
+                        class={`tgt${showCross ? ' on' : ''}`}
+                        aria-label={showCross ? t('clearTargets') : t('target')}
+                        aria-pressed={isSource}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTargetButton(it);
+                        }}
+                      >
+                        {showCross ? <Cross /> : <Crosshair />}
+                      </button>
+                      <button
+                        type="button"
+                        class="remove"
+                        aria-label={`${t('remove')} ${it.card.printedName}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromStack(it.uid);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          <footer class="credits">{t('credits')}</footer>
+        </section>
+      </div>
+
+      <Arrows links={links} />
 
       {preview && (
-        <section class="preview">
-          {preview.image && <img src={preview.image} alt={preview.printedName} />}
-          {isFallback && <p class="status">{t('fallback')}</p>}
-          <div class="actions">
-            <button type="button" class="secondary" onClick={() => setPreview(null)}>
-              {t('cancel')}
-            </button>
-            <button type="button" class="primary" onClick={addToStack}>
-              {t('add')}
-            </button>
-          </div>
-        </section>
-      )}
-
-      <section class="stack">
-        <h2>{t('stack')}</h2>
-        {stack.length === 0 ? (
-          <p class="status">{t('stackEmpty')}</p>
-        ) : (
-          // Ordine visivo: la carta più vecchia sta in alto e dietro; ogni nuova carta
-          // si sovrappone sotto. L'ultima (in cima allo stack) è intera e illuminata.
-          <ol class="pile">
-            {stack.map((e, i) => {
-              const isTop = i === stack.length - 1;
-              return (
-                <li
-                  key={e.uid}
-                  class={isTop ? 'pile-card is-top' : 'pile-card'}
-                  style={{ zIndex: i + 1 }}
-                  aria-current={isTop ? 'true' : undefined}
-                >
-                  {e.card.image ? (
-                    <img src={e.card.image} alt={e.card.printedName} />
-                  ) : (
-                    <div class="no-image">{e.card.printedName}</div>
-                  )}
-                  {isTop && <span class="badge">{t('top')}</span>}
-                  <button
-                    type="button"
-                    class="remove"
-                    aria-label={`${t('remove')} ${e.card.printedName}`}
-                    onClick={() => setStack((s) => s.filter((x) => x.uid !== e.uid))}
-                  >
-                    ✕
+        <div class="sheet-backdrop" onClick={() => setPreview(null)}>
+          <section class="sheet" onClick={(e) => e.stopPropagation()}>
+            {preview.image && <img src={preview.image} alt={preview.printedName} />}
+            <div class="sheet-body">
+              {isFallback && <p class="status">{t('fallback')}</p>}
+              <p class="label">{t('toStack')}</p>
+              <div class="chips">
+                {players.map((p) => (
+                  <button key={p} type="button" class="chip" style={{ '--pc': PLAYER_COLOR[p] }} onClick={() => putOnStack(p)}>
+                    {p}
                   </button>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </section>
-
-      <footer class="credits">{t('credits')}</footer>
+                ))}
+              </div>
+              <p class="label">{t('toBattlefield')}</p>
+              <div class="chips">
+                {players.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    class="chip outline"
+                    style={{ '--pc': PLAYER_COLOR[p] }}
+                    onClick={() => putOnBattlefield(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <button type="button" class="secondary" onClick={() => setPreview(null)}>
+                {t('cancel')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

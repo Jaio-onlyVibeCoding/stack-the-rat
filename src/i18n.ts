@@ -30,6 +30,16 @@ const en = {
   remove: 'Remove',
   language: 'Language',
   fallback: 'Not printed in Italian: showing English.',
+  player: 'Player',
+  players: 'Players',
+  addPlayer: 'Add a player',
+  removePlayer: 'Remove the last player',
+  toStack: 'Cast / put on the stack for',
+  toBattlefield: 'Put onto the battlefield of',
+  battlefieldEmpty: 'No permanents.',
+  target: 'Choose targets',
+  clearTargets: 'Remove all arrows',
+  targetingHint: 'Tap a target: a player, a permanent or an object lower in the stack. Tap an empty area to finish.',
   credits:
     'Card data and images from Scryfall. Magic: The Gathering © Wizards of the Coast. Unofficial fan content, not approved by Wizards.',
 };
@@ -51,6 +61,16 @@ const it: Dict = {
   remove: 'Rimuovi',
   language: 'Lingua',
   fallback: 'Non stampata in italiano: mostro la versione inglese.',
+  player: 'Giocatore',
+  players: 'Giocatori',
+  addPlayer: 'Aggiungi un giocatore',
+  removePlayer: "Rimuovi l'ultimo giocatore",
+  toStack: 'Lancia / metti in pila per',
+  toBattlefield: 'Metti sul campo di battaglia di',
+  battlefieldEmpty: 'Nessun permanente.',
+  target: 'Scegli i bersagli',
+  clearTargets: 'Cancella tutte le frecce',
+  targetingHint: "Tocca un bersaglio: un giocatore, un permanente o un oggetto più in basso nella pila. Tocca uno spazio vuoto per finire.",
   credits:
     'Dati e immagini delle carte da Scryfall. Magic: The Gathering © Wizards of the Coast. Contenuto non ufficiale dei fan, non approvato da Wizards.',
 };
