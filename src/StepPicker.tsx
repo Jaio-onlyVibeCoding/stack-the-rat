@@ -43,7 +43,7 @@ export function StepPicker({
   return (
     <div class="step-picker">
       <button type="button" class="step-current" disabled={disabled} aria-expanded={!!pos} onClick={toggle}>
-        <b>{phaseName(step)}</b>
+        <b>{single ? stepName(step) : phaseName(step)}</b>
         {!single && <span>{stepName(step)}</span>}
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" class="icon">
           <path d="M6 9l6 6 6-6" />
