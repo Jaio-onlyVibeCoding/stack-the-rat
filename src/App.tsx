@@ -145,8 +145,6 @@ export function App() {
     } catch {}
   }
   /** solo chi ha la priorità può lanciare, attivare, mettere in pila */
-  /** con "Fasi, priorità e velocità" attivo, solo chi ha la priorità può lanciare/attivare/mettere in pila */
-  const strict = phases;
   /** carte di esempio (placeholder) mostrate finché non si aggiunge una carta; tornano solo con il reset */
   const [showExamples, setShowExamples] = useState(true);
   const [examples, setExamples] = useState<{ perms: Card[]; spell?: Card }>({ perms: [] });
@@ -174,6 +172,8 @@ export function App() {
       localStorage.setItem('phases', on ? '1' : '0');
     } catch {}
   }
+  /** con "Fasi, priorità e velocità" attivo, solo chi ha la priorità può lanciare/attivare/mettere in pila */
+  const strict = phases;
   const stepName = (i: number) => t('stepNames').split('|')[i] ?? '';
   /** c'è una creatura con attacco improvviso o doppio attacco sul campo? (CR 510.4) */
   const anyFirstStrike = () =>
