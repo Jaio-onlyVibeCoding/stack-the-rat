@@ -140,7 +140,11 @@ export function App() {
     const m = window.matchMedia(NARROW_QUERY);
     const f = () => setNarrow(m.matches);
     m.addEventListener('change', f);
-    return () => m.removeEventListener('change', f);
+    window.addEventListener('resize', f); // alcuni browser non segnalano il cambio della media query
+    return () => {
+      m.removeEventListener('change', f);
+      window.removeEventListener('resize', f);
+    };
   }, []);
   /** telefono: ricerca aperta, menu ⋮ aperto, opzioni del pannello priorità aperte */
   const [searchOpen, setSearchOpen] = useState(false);
