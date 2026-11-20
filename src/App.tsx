@@ -146,6 +146,14 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [prioOpts, setPrioOpts] = useState(false);
+  /** zoom del campo di battaglia di ogni giocatore (pizzico con due dita / pulsanti −+) */
+  const [zoom, setZoom] = useState<Partial<Record<PlayerId, number>>>({});
+  const zoomOf = (p: PlayerId) => zoom[p] ?? 1;
+  const setZoomOf = (p: PlayerId, z: number) =>
+    setZoom((all) => ({ ...all, [p]: Math.round(Math.min(2.5, Math.max(0.5, z)) * 100) / 100 }));
+  const pinch = useRef<{ id: PlayerId; d0: number; z0: number } | null>(null);
+  const touchDist = (e: TouchEvent) =>
+    Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
   /** colonna della pila larga il doppio */
   const [wideStack, setWideStack] = useState(false);
   const [isFull, setIsFull] = useState(false);
@@ -210,6 +218,7 @@ export function App() {
     setViewer(null);
     setHistoryOpen(false);
     setWideStack(false);
+    setZoom({});
     setCopyAsk(null);
     // anche le impostazioni tornano a quelle iniziali
     try {
@@ -836,6 +845,16 @@ export function App() {
                 <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
                   {t('player')} {id}
                 </button>
+                {!narrow && !isCollapsed && (
+                  <div class="zoom-btns">
+                    <button type="button" aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => setZoomOf(id, zoomOf(id) - 0.2)}>
+                      −
+                    </button>
+                    <button type="button" aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => setZoomOf(id, zoomOf(id) + 0.2)}>
+                      +
+                    </button>
+                  </div>
+                )}
                 <button
                   type="button"
                   class={`gy${panels.includes(`gy:${id}`) ? ' on' : ''}${drag?.over === `gy:${id}` ? ' drop-over' : ''}`}
@@ -859,7 +878,23 @@ export function App() {
                 </div>
               )}
               {!isCollapsed && (
-              <div class="field">
+              <div
+                class="field"
+                style={{ '--zoom': zoomOf(id) }}
+                onTouchStart={(e) => {
+                  if (e.touches.length === 2) pinch.current = { id, d0: touchDist(e), z0: zoomOf(id) };
+                }}
+                onTouchMove={(e) => {
+                  const p = pinch.current;
+                  if (p && p.id === id && e.touches.length === 2) {
+                    e.preventDefault();
+                    setZoomOf(id, (p.z0 * touchDist(e)) / p.d0);
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  if (e.touches.length < 2) pinch.current = null;
+                }}
+              >
                 {mine.length === 0 && !(showExamples && id === 'A' && examples.perms.length) && (
                   <p class="status">{t('battlefieldEmpty')}</p>
                 )}
@@ -1125,6 +1160,7 @@ export function App() {
                   disabled={g.resolving !== null}
                   warnStep={anyFirstStrike() ? STEP.damage : null}
                   onPick={setStep}
+                  shortName={narrow ? (i) => t('stepShort').split('|')[i] ?? '' : undefined}
                 />
                 {anyFirstStrike() && (
                   <button
@@ -1149,10 +1185,12 @@ export function App() {
             ) : (
               <>
                 <div class="prio-row">
-                  <span class="prio-who">
-                    {t('priority')}: <b>{g.priority ?? t('nobody')}</b>
-                  </span>
-                  {narrow && (
+                  {!narrow && (
+                    <span class="prio-who">
+                      {t('priority')}: <b>{g.priority ?? t('nobody')}</b>
+                    </span>
+                  )}
+                  {false && (
                     <span class="passes inline" title={t('passHelp')}>
                       {g.players.map((p) => (
                         <span key={p} class={g.passed.includes(p) ? 'passed' : ''} style={{ '--pc': PLAYER_COLOR[p] }}>
@@ -1162,7 +1200,12 @@ export function App() {
                       ))}
                     </span>
                   )}
-                  <button type="button" class="pass" onClick={pass}>
+                  <button
+                    type="button"
+                    class="pass"
+                    onClick={pass}
+                    aria-label={`${t('pass')} (${t('player')} ${g.priority ?? ''})`}
+                  >
                     {t('pass')}
                   </button>
                   {narrow && (
