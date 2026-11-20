@@ -1,10 +1,14 @@
-// Condivisione del setup: lo stato di gioco diventa un link.
+// Condivisione del setup: lo stato di gioco (e, se richiesto, tutto lo storico) diventa un link.
 // Nel link ci sono solo gli id Scryfall delle carte; chi apre il link le riscarica da Scryfall.
 // Il testo è compresso (deflate) e codificato in base64url, dopo "#s=".
+//
+// Formati:
+//   v1: una sola condizione di gioco (link creati prima dello storico condiviso; ancora leggibili)
+//   v2: elenco di condizioni [ora, messaggi, partita] + posizione attuale nello storico
 
 import { bumpUid, type Game, type PlayerId, type StackKind, type Zone } from './game';
 import type { Choices } from './choices';
-import { fetchByIds } from './scryfall';
+import { fetchByIds, type Card } from './scryfall';
 
 /** Dati in più di una carta: attaccata a, carte sotto (mutare), segnalini, collegata a */
 interface Extra {
@@ -14,20 +18,38 @@ interface Extra {
   l?: number;
 }
 
-interface Shared {
-  v: 1;
+/** Una condizione di gioco in forma compatta */
+interface Compact {
   p: PlayerId[];
   a: PlayerId;
   pr: PlayerId | null;
   ps: PlayerId[];
   r: number | null;
-  /** pila: [uid, idScryfall, proprietario, controllore, bersagli, tipo, testo abilità] */
+  /** pila: [uid, idScryfall, proprietario, controllore, bersagli, tipo, testo abilità, scelte, copia, carte che tornano] */
   s: [number, string, PlayerId, PlayerId, string[], StackKind?, string?, Choices?, (0 | 1)?, number[]?][];
-  /** carte: [uid, idScryfall, proprietario, controllore, zona, token, tappata, preparata, girata] */
+  /** carte: [uid, idScryfall, proprietario, controllore, zona, token, tappata, preparata, girata, extra] */
   o: [number, string, PlayerId, PlayerId, Zone, 0 | 1, (0 | 1)?, (0 | 1)?, (0 | 1)?, Extra?][];
   g: Record<string, string>;
   /** sottofase */
   st?: number;
+}
+
+interface SharedV1 extends Compact {
+  v: 1;
+}
+
+interface SharedV2 {
+  v: 2;
+  /** storico: [ora, messaggi, condizione] */
+  h: [string, string[], Compact][];
+  /** posizione attuale nello storico */
+  i: number;
+}
+
+/** Ciò che serve all'app: le condizioni con i loro messaggi e la posizione attuale. */
+export interface SharedTimeline {
+  timeline: { game: Game; messages: string[]; time: string }[];
+  pos: number;
 }
 
 const toB64Url = (bytes: Uint8Array) => {
@@ -54,9 +76,8 @@ const extraOf = (o: Game['objs'][number]): Extra | undefined => {
   return Object.keys(e).length ? e : undefined;
 };
 
-export async function encodeGame(g: Game): Promise<string> {
-  const shared: Shared = {
-    v: 1,
+function toCompact(g: Game): Compact {
+  return {
     p: g.players,
     a: g.active,
     pr: g.priority,
@@ -67,21 +88,17 @@ export async function encodeGame(g: Game): Promise<string> {
     g: g.gone,
     st: g.step,
   };
-  const bytes = new TextEncoder().encode(JSON.stringify(shared));
-  return toB64Url(await pipe(bytes, new CompressionStream('deflate-raw')));
 }
 
-export async function decodeGame(code: string): Promise<Game> {
-  const bytes = await pipe(fromB64Url(code), new DecompressionStream('deflate-raw'));
-  const s = JSON.parse(new TextDecoder().decode(bytes)) as Shared;
-  if (s.v !== 1) throw new Error('Unknown version');
-  const cards = await fetchByIds([
-    ...s.s.map((x) => x[1]),
-    ...s.o.map((x) => x[1]),
-    ...s.o.flatMap((x) => (x[9]?.u ?? []).map((u) => u[0])),
-  ]);
-  const maxUid = Math.max(0, ...s.s.map((x) => x[0]), ...s.o.map((x) => x[0]));
-  bumpUid(maxUid);
+/** Id Scryfall di tutte le carte di una condizione */
+const idsOf = (c: Compact) => [
+  ...c.s.map((x) => x[1]),
+  ...c.o.map((x) => x[1]),
+  ...c.o.flatMap((x) => (x[9]?.u ?? []).map((u) => u[0])),
+];
+const maxUidOf = (c: Compact) => Math.max(0, ...c.s.map((x) => x[0]), ...c.o.map((x) => x[0]));
+
+function fromCompact(s: Compact, cards: Map<string, Card>): Game {
   return {
     players: s.p,
     active: s.a,
@@ -122,6 +139,37 @@ export async function decodeGame(code: string): Promise<Game> {
         linkedTo: x?.l,
       })),
   };
+}
+
+/**
+ * Crea il codice da mettere nel link.
+ * withHistory = true: tutto lo storico (avanti/indietro funzionano anche per chi apre il link);
+ * false: solo la condizione attuale.
+ */
+export async function encodeShare(
+  timeline: SharedTimeline['timeline'],
+  pos: number,
+  withHistory: boolean,
+): Promise<string> {
+  const shared: SharedV2 = withHistory
+    ? { v: 2, h: timeline.map((s) => [s.time, s.messages, toCompact(s.game)]), i: pos }
+    : { v: 2, h: [[timeline[pos].time, [], toCompact(timeline[pos].game)]], i: 0 };
+  const bytes = new TextEncoder().encode(JSON.stringify(shared));
+  return toB64Url(await pipe(bytes, new CompressionStream('deflate-raw')));
+}
+
+export async function decodeShare(code: string): Promise<SharedTimeline> {
+  const bytes = await pipe(fromB64Url(code), new DecompressionStream('deflate-raw'));
+  const raw = JSON.parse(new TextDecoder().decode(bytes)) as SharedV1 | SharedV2;
+  let snaps: [string, string[], Compact][];
+  if (raw.v === 1) snaps = [['', [], raw]];
+  else if (raw.v === 2) snaps = raw.h;
+  else throw new Error('Unknown version');
+  const cards = await fetchByIds(snaps.flatMap((s) => idsOf(s[2])));
+  bumpUid(Math.max(0, ...snaps.map((s) => maxUidOf(s[2]))));
+  const timeline = snaps.map(([time, messages, c]) => ({ time, messages, game: fromCompact(c, cards) }));
+  const pos = raw.v === 2 ? Math.min(Math.max(0, raw.i), timeline.length - 1) : 0;
+  return { timeline, pos };
 }
 
 export function shareUrl(code: string): string {

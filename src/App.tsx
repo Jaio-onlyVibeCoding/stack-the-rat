@@ -24,7 +24,7 @@ import {
 } from './game';
 import { LANGS, detect, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
 import { getCard, type Card } from './scryfall';
-import { decodeGame, encodeGame, sharedCodeFromUrl, shareUrl } from './share';
+import { decodeShare, encodeShare, sharedCodeFromUrl, shareUrl } from './share';
 import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
 import { Help } from './Help';
@@ -120,6 +120,8 @@ export function App() {
   const [menu, setMenu] = useState<{ uid: number; x: number; y: number; top: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [share, setShare] = useState<{ url: string; copied: boolean } | null>(null);
+  /** includere lo storico nel link condiviso */
+  const [shareHistory, setShareHistory] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   /** campi di battaglia chiusi */
@@ -291,12 +293,14 @@ export function App() {
     const code = sharedCodeFromUrl();
     if (!code) return;
     setNotice(t('sharedLoading'));
-    decodeGame(code)
-      .then((game) => {
-        setTimeline([{ game, messages: [t('sharedLoaded')], time: now() }]);
+    decodeShare(code)
+      .then(({ timeline: tl, pos: p }) => {
+        // lo storico arriva con il link: ↶ / ↷ funzionano anche per chi lo apre
+        setTimeline(tl.map((x) => ({ ...x, time: x.time || now() })));
+        setPos(p);
         setShowExamples(false);
-        setPos(0);
-        setNotice(null);
+        setNotice(t('sharedLoaded'));
+        setTimeout(() => setNotice(null), 3500);
       })
       .catch(() => {
         setNotice(t('sharedError'));
@@ -957,9 +961,9 @@ export function App() {
   }
 
   // ---- Condivisione ----
-  async function openShare() {
+  async function openShare(withHistory = shareHistory) {
     try {
-      setShare({ url: shareUrl(await encodeGame(g)), copied: false });
+      setShare({ url: shareUrl(await encodeShare(timeline, pos, withHistory)), copied: false });
     } catch {
       setShare({ url: '', copied: false });
     }
@@ -1247,7 +1251,7 @@ export function App() {
               <button type="button" class="share-btn" onClick={resetApp} aria-label={t('reset')} title={t('reset')}>
                 <Icon d={RESET} size={18} />
               </button>
-              <button type="button" class="share-btn" onClick={openShare} aria-label={t('share')} title={t('share')}>
+              <button type="button" class="share-btn" onClick={() => openShare()} aria-label={t('share')} title={t('share')}>
                 <Icon d={SHARE} size={18} />
               </button>
             </>
@@ -1292,7 +1296,7 @@ export function App() {
                 <Icon d={isFull ? EXIT_FULL : FULL} size={16} /> {t('fullscreen')}
               </button>
             )}
-            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); openShare(); }}>
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); openShare();  }}>
               <Icon d={SHARE} size={16} /> {t('share')}
             </button>
             <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); resetApp(); }}>
@@ -2124,7 +2128,20 @@ export function App() {
             {share.url ? (
               <>
                 <p class="status">{t('shareHelp')}</p>
+                <label class="help-toggle">
+                  <input
+                    type="checkbox"
+                    checked={shareHistory}
+                    onChange={(e) => {
+                      const on = (e.target as HTMLInputElement).checked;
+                      setShareHistory(on);
+                      openShare(on);
+                    }}
+                  />
+                  {t('shareWithHistory')}
+                </label>
                 <input id="share-url" readOnly value={share.url} onFocus={(e) => (e.target as HTMLInputElement).select()} />
+                <p class="status">{tr('shareLength', { n: String(share.url.length) })}</p>
                 <div class="actions">
                   <button type="button" class="primary" onClick={copyShare}>
                     {share.copied ? t('copied') : t('copy')}
