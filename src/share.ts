@@ -173,7 +173,7 @@ export async function decodeShare(code: string): Promise<SharedTimeline> {
 }
 
 /** Archivio dei link brevi (Cloudflare Worker, vedi cloudflare/README.md) */
-export const SHORT_LINK_URL = 'https://stack-the-rat.jacopotavianucci.workers.dev';
+export const SHORT_LINK_URL = 'https://stack-the-rat.jaio-vibes.workers.dev';
 
 /** Salva il codice nell'archivio e restituisce il link corto; null se l'archivio non risponde. */
 export async function shortLink(code: string): Promise<string | null> {
