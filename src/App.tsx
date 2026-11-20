@@ -290,6 +290,12 @@ export function App() {
 
   // Apertura di un setup condiviso (#s=...)
   useEffect(() => {
+    // link corto scaduto o inesistente: l'archivio rimanda qui con #missing
+    if (location.hash === '#missing') {
+      setNotice(t('sharedError'));
+      history.replaceState(null, '', location.pathname);
+      return;
+    }
     const code = sharedCodeFromUrl();
     if (!code) return;
     setNotice(t('sharedLoading'));
