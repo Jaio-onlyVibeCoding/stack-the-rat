@@ -3,6 +3,7 @@
 // Il testo è compresso (deflate) e codificato in base64url, dopo "#s=".
 
 import { bumpUid, type Game, type PlayerId, type StackKind, type Zone } from './game';
+import type { Choices } from './choices';
 import { fetchByIds } from './scryfall';
 
 interface Shared {
@@ -13,9 +14,9 @@ interface Shared {
   ps: PlayerId[];
   r: number | null;
   /** pila: [uid, idScryfall, proprietario, controllore, bersagli, tipo, testo abilità] */
-  s: [number, string, PlayerId, PlayerId, string[], StackKind?, string?][];
-  /** carte: [uid, idScryfall, proprietario, controllore, zona, token] */
-  o: [number, string, PlayerId, PlayerId, Zone, 0 | 1][];
+  s: [number, string, PlayerId, PlayerId, string[], StackKind?, string?, Choices?, (0 | 1)?][];
+  /** carte: [uid, idScryfall, proprietario, controllore, zona, token, tappata, preparata] */
+  o: [number, string, PlayerId, PlayerId, Zone, 0 | 1, (0 | 1)?, (0 | 1)?][];
   g: Record<string, string>;
 }
 
@@ -42,8 +43,8 @@ export async function encodeGame(g: Game): Promise<string> {
     pr: g.priority,
     ps: g.passed,
     r: g.resolving,
-    s: g.stack.map((x) => [x.uid, x.card.scryfallId, x.owner, x.controller, x.targets, x.kind, x.text]),
-    o: g.objs.map((o) => [o.uid, o.card.scryfallId, o.owner, o.controller, o.zone, o.token ? 1 : 0]),
+    s: g.stack.map((x) => [x.uid, x.card.scryfallId, x.owner, x.controller, x.targets, x.kind, x.text, x.choices, x.copy ? 1 : 0]),
+    o: g.objs.map((o) => [o.uid, o.card.scryfallId, o.owner, o.controller, o.zone, o.token ? 1 : 0, o.tapped ? 1 : 0, o.prepared ? 1 : 0]),
     g: g.gone,
   };
   const bytes = new TextEncoder().encode(JSON.stringify(shared));
@@ -66,7 +67,7 @@ export async function decodeGame(code: string): Promise<Game> {
     gone: s.g,
     stack: s.s
       .filter((x) => cards.has(x[1]))
-      .map(([uid, id, owner, controller, targets, kind, text]) => ({
+      .map(([uid, id, owner, controller, targets, kind, text, choices, copy]) => ({
         uid,
         card: cards.get(id)!,
         owner,
@@ -74,16 +75,20 @@ export async function decodeGame(code: string): Promise<Game> {
         targets,
         kind: kind ?? 'spell',
         text,
+        choices,
+        copy: copy === 1,
       })),
     objs: s.o
       .filter((x) => cards.has(x[1]))
-      .map(([uid, id, owner, controller, zone, token]) => ({
+      .map(([uid, id, owner, controller, zone, token, tapped, prepared]) => ({
         uid,
         card: cards.get(id)!,
         owner,
         controller,
         zone,
         token: token === 1,
+        tapped: tapped === 1,
+        prepared: prepared === 1,
       })),
   };
 }

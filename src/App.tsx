@@ -10,6 +10,7 @@ import {
   isLegal,
   newUid,
   objKey,
+  leaveDestination,
   relocate,
   type CardObj,
   type Destination,
@@ -21,6 +22,9 @@ import {
 import { LANGS, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
 import type { Card } from './scryfall';
 import { decodeGame, encodeGame, sharedCodeFromUrl, shareUrl } from './share';
+import { ChoicesSheet } from './ChoicesSheet';
+import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
+import { Help } from './Help';
 
 // ---------- Icone ----------
 const Icon = ({ d, size = 22 }: { d: string; size?: number }) => (
@@ -49,6 +53,11 @@ const chevron = (up: boolean) => (up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6');
 /** Icone delle abilità: fulmine = innescata, freccia di attivazione = attivata */
 const TRIGGER = 'M13 2L4 14h7l-1 8 9-12h-7z';
 const ACTIVATE = 'M4 12a8 8 0 1 0 3-6.2M4 4v4h4';
+const TAP = 'M7 4h7a2 2 0 0 1 2 2v3M17 20H10a2 2 0 0 1-2-2v-3M13 9l3 3 3-3M11 15l-3-3-3 3';
+const MOVE = 'M5 12h14M13 6l6 6-6 6';
+const SPARK = 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6';
+const EXTERNAL = 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5';
+const DOTS = 'M5 12h.01M12 12h.01M19 12h.01';
 
 /** Una "condizione" della partita: lo stato e i messaggi che l'hanno prodotta. */
 interface Snapshot {
@@ -86,6 +95,23 @@ export function App() {
   const [collapsed, setCollapsed] = useState<PlayerId[]>([]);
   /** scelta del testo di un'abilità prima di metterla in pila */
   const [abilityPick, setAbilityPick] = useState<{ card: Card; kind: StackKind; controller: PlayerId } | null>(null);
+  /** oggetto in pila di cui si stanno modificando le scelte */
+  const [choicesFor, setChoicesFor] = useState<number | null>(null);
+  /** sottomenu "Sposta in" aperto */
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [help, setHelp] = useState(() => {
+    try {
+      return localStorage.getItem('help') === '1';
+    } catch {
+      return false;
+    }
+  });
+  function toggleHelp(on: boolean) {
+    setHelp(on);
+    try {
+      localStorage.setItem('help', on ? '1' : '0');
+    } catch {}
+  }
   const stackCol = useRef<HTMLElement>(null);
 
   // Apertura di un setup condiviso (#s=...)
@@ -186,19 +212,100 @@ export function App() {
   }
 
   // ---- Carte ----
+  /** La carta richiede scelte al momento del lancio? (CR 601.2b) */
+  const needsChoices = (c: Card) =>
+    canChooseFace(c) || hasX(c, null) || !!parseModes(c, null) || costKeywords(c).additional.length > 0 || costKeywords(c).alternative.length > 0;
+
   function cast(controller: PlayerId) {
     if (!preview || g.resolving !== null) return;
+    const uid = newUid();
     // CR 117.3c: chi lancia una magia riceve di nuovo la priorità; i passaggi precedenti non contano più
     commit(
       {
         ...g,
-        stack: [...g.stack, { uid: newUid(), card: preview, owner: controller, controller, targets: [], kind: 'spell' }],
+        stack: [...g.stack, { uid, card: preview, owner: controller, controller, targets: [], kind: 'spell' }],
         priority: controller,
         passed: [],
       },
       tr('logCast', { p: controller, card: preview.printedName }),
     );
+    // CR 601.2b: modalità, X, costi e metà si scelgono subito dopo l'annuncio
+    if (needsChoices(preview)) setChoicesFor(uid);
     setPreview(null);
+  }
+
+  /** Nome mostrato di un oggetto in pila: la faccia lanciata, se scelta. */
+  const itemName = (it: StackItem) =>
+    (it.kind === 'spell' ? chosenFace(it.card, it.choices, it.copy)?.printedName : null) ?? it.card.printedName;
+
+  function saveChoices(uid: number, ch: Choices) {
+    const it = g.stack.find((x) => x.uid === uid);
+    setChoicesFor(null);
+    if (!it) return;
+    const next: StackItem = { ...it, choices: Object.keys(ch).length ? ch : undefined };
+    const sum = summarize(it.card, ch, { mode: t('mode') }).join(' · ');
+    commit(
+      { ...g, stack: g.stack.map((x) => (x.uid === uid ? next : x)) },
+      tr('logChoices', { card: itemName(next), choices: sum || '—' }),
+    );
+  }
+
+  /**
+   * Una magia o abilità lascia la pila: dove va dipende da come è stata lanciata
+   * (copia, flashback, avventura, buyback, permanente…). resolved = si è risolta.
+   */
+  function leaveStack(base: Game, it: StackItem, resolved: boolean): { game: Game; msgs: string[] } {
+    const card = itemName(it);
+    const face = it.kind === 'spell' ? chosenFace(it.card, it.choices, it.copy) : null;
+    const permanent = face ? face.isPermanent : it.card.isPermanent;
+    const dest = leaveDestination(it, resolved, permanent);
+    const msgs: string[] = resolved ? [] : [tr('notResolved', { card })];
+    if (dest === 'cease' || dest === 'hand') {
+      const game = { ...base, stack: base.stack.filter((x) => x.uid !== it.uid) };
+      if (dest === 'hand') msgs.push(tr('logToHand', { card }));
+      else if (it.kind !== 'spell') msgs.push(resolved ? tr('abilityResolved', { card }) : tr('logCease', { card }));
+      else msgs.push(tr('logCease', { card }));
+      return { game, msgs };
+    }
+    // bifronte modale lanciata col retro: sul campo mostra il retro
+    const item =
+      dest === 'battlefield' && it.card.layout === 'modal_dfc' && face?.image
+        ? { ...it, card: { ...it.card, image: face.image, printedName: face.printedName } }
+        : it;
+    const { game } = relocate(base, { kind: 'stack', item }, dest);
+    if (dest === 'battlefield') msgs.push(tr('resolvedPermanent', { card }));
+    else if (dest === 'graveyard') msgs.push(resolved ? tr('resolved', { card }) : tr('goesGraveyard', { card }));
+    else msgs.push(resolved && it.card.layout === 'adventure' && it.choices?.face === 1 ? tr('logAdventure', { card }) : tr('logFlashbackExile', { card }));
+    return { game, msgs };
+  }
+
+  // ---- Permanenti: TAPpare, preparare ----
+  function setObj(o: CardObj, patch: Partial<CardObj>, msg: string) {
+    commit({ ...g, objs: g.objs.map((x) => (x.uid === o.uid ? { ...x, ...patch } : x)) }, msg);
+  }
+  /** Magia preparata: si lancia una copia della magia di preparazione; la creatura smette di essere preparata. */
+  function castPrepared(o: CardObj) {
+    if (g.resolving !== null || !o.card.faces[1]) return;
+    const item: StackItem = {
+      uid: newUid(),
+      card: o.card,
+      owner: o.controller,
+      controller: o.controller,
+      targets: [],
+      kind: 'spell',
+      copy: true,
+    };
+    commit(
+      {
+        ...g,
+        objs: g.objs.map((x) => (x.uid === o.uid ? { ...x, prepared: false } : x)),
+        stack: [...g.stack, item],
+        priority: o.controller,
+        passed: [],
+      },
+      tr('logCastPrepared', { p: o.controller, spell: o.card.faces[1].printedName, card: o.card.faces[0].printedName }),
+    );
+    if (hasX(o.card, o.card.faces[1]) || parseModes(o.card, o.card.faces[1])) setChoicesFor(item.uid);
   }
   /**
    * Mette in pila un'abilità. Attivata (CR 602): chi la attiva riceve la priorità (117.3c).
@@ -281,17 +388,11 @@ export function App() {
       return;
     }
     // CR 608.2b: i bersagli si ricontrollano all'inizio della risoluzione
-    const name = top.card.printedName;
+    const name = itemName(top);
     const legal = top.targets.filter((k) => isLegal(g, k));
     if (top.targets.length > 0 && legal.length === 0) {
-      if (top.kind !== 'spell') {
-        // un'abilità che non si risolve lascia semplicemente la pila
-        const rest = g.stack.filter((x) => x.uid !== top.uid);
-        commit({ ...g, stack: rest, passed: [], priority: g.active }, passMsg, tr('abilityFizzled', { card: name }));
-        return;
-      }
-      const { game } = relocate(g, { kind: 'stack', item: top }, 'graveyard');
-      commit({ ...game, passed: [], priority: g.active }, passMsg, tr('fizzled', { card: name }));
+      const { game, msgs } = leaveStack(g, top, false);
+      commit({ ...game, passed: [], priority: g.active }, passMsg, ...msgs);
       return;
     }
     const msgs = [passMsg, tr('resolvingStart', { card: name })];
@@ -305,21 +406,9 @@ export function App() {
   function finishResolution() {
     const it = resolvingItem;
     if (!it) return;
-    if (it.kind !== 'spell') {
-      // un'abilità risolta lascia la pila e cessa di esistere
-      commit(
-        { ...g, stack: g.stack.filter((x) => x.uid !== it.uid), resolving: null, priority: g.active, passed: [] },
-        tr('abilityResolved', { card: it.card.printedName }),
-      );
-      return;
-    }
-    // CR 608.3: una magia permanente entra sul campo; CR 608.2n: istantaneo/stregoneria va al cimitero
-    const dest = it.card.isPermanent ? 'battlefield' : 'graveyard';
-    const { game } = relocate(g, { kind: 'stack', item: it }, dest);
-    commit(
-      { ...game, resolving: null, priority: g.active, passed: [] },
-      tr(dest === 'battlefield' ? 'resolvedPermanent' : 'resolved', { card: it.card.printedName }),
-    );
+    // CR 608.3: permanente → campo; CR 608.2n: istantaneo/stregoneria → cimitero; abilità e copie cessano di esistere
+    const { game, msgs } = leaveStack(g, it, true);
+    commit({ ...game, resolving: null, priority: g.active, passed: [] }, ...msgs);
   }
 
   // ---- Bersagli ----
@@ -403,6 +492,7 @@ export function App() {
 
   function openMenu(uid: number, e: MouseEvent) {
     e.stopPropagation();
+    setMoveOpen(false);
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setMenu({ uid, x: r.right, y: r.bottom });
   }
@@ -433,9 +523,14 @@ export function App() {
 
   /** Carta sul campo, nel cimitero o in esilio, con il menu ⋯ */
   const renderTile = (o: CardObj, cls: string) => (
-    <div key={o.uid} {...objProps(objKey.of(o), cls)} style={{ '--pc': PLAYER_COLOR[o.owner] }}>
+    <div
+      key={o.uid}
+      {...objProps(objKey.of(o), `${cls}${o.tapped && o.zone === 'battlefield' ? ' tapped' : ''}`)}
+      style={{ '--pc': PLAYER_COLOR[o.owner] }}
+    >
       {o.card.image ? <img src={o.card.image} alt={o.card.printedName} /> : <span class="no-img">{o.card.printedName}</span>}
       {o.token && <span class="token-tag">{t('token')}</span>}
+      {o.prepared && o.zone === 'battlefield' && <span class="prep-tag">{t('prepared')}</span>}
       {cls === 'tile' && <span class="owner-tag">{o.owner}</span>}
       <button type="button" class="more" aria-label={`${t('menu')}: ${o.card.printedName}`} onClick={(e) => openMenu(o.uid, e)}>
         ⋯
@@ -604,6 +699,10 @@ export function App() {
                 ))}
               </select>
             </label>
+            <label class="help-toggle">
+              <input type="checkbox" checked={help} onChange={(e) => toggleHelp((e.target as HTMLInputElement).checked)} />
+              {t('help')}
+            </label>
             {resolvingItem ? (
               <>
                 <p class="resolving-msg">{tr('resolvingBanner', { card: resolvingItem.card.printedName })}</p>
@@ -666,14 +765,35 @@ export function App() {
                         <p class="ability-kind">{t(it.kind as Key)}</p>
                         <p class="ability-text">{it.text ?? '—'}</p>
                       </div>
-                    ) : it.card.image ? (
-                      <img src={it.card.image} alt={it.card.printedName} />
+                    ) : (chosenFace(it.card, it.choices, it.copy)?.image ?? it.card.image) ? (
+                      <img src={chosenFace(it.card, it.choices, it.copy)?.image ?? it.card.image} alt={itemName(it)} />
                     ) : (
                       <div class="no-image">{it.card.printedName}</div>
                     )}
                     <span class="ctrl">{it.controller}</span>
+                    {(it.copy || it.choices) && (
+                      <div class="choice-chips">
+                        {it.copy && <span class="chip-copy">{t('copyTag')}</span>}
+                        {it.copy && it.card.faces[1] && <span>{it.card.faces[1].printedName}</span>}
+                        {summarize(it.card, it.choices, { mode: t('mode') }).map((c, k) => (
+                          <span key={k}>{c}</span>
+                        ))}
+                      </div>
+                    )}
                     {isTop && <span class="badge">{isResolving ? t('resolvingTag') : t('top')}</span>}
                     <div class="card-tools">
+                      <button
+                        type="button"
+                        class="more-stack"
+                        aria-label={`${t('stackMenu')}: ${itemName(it)}`}
+                        title={t('stackMenu')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setChoicesFor(it.uid);
+                        }}
+                      >
+                        <Icon d={DOTS} />
+                      </button>
                       {!isResolving && (
                         <button
                           type="button"
@@ -765,20 +885,76 @@ export function App() {
               {menuObj.card.printedName}
               {menuObj.token ? ` · ${t('token')}` : ''}
             </p>
-            <p class="menu-label">{t('moveTo')}</p>
-            {DESTINATIONS.filter((d) => d !== menuObj.zone).map((d) => (
+            {menuObj.zone === 'battlefield' && (
               <button
-                key={d}
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  moveObj(menuObj, d);
+                  setObj(menuObj, { tapped: !menuObj.tapped }, tr(menuObj.tapped ? 'logUntap' : 'logTap', { card: menuObj.card.printedName }));
                   setMenu(null);
                 }}
               >
-                → {destName(d)}
+                <Icon d={TAP} size={16} /> {menuObj.tapped ? t('untap') : t('tap')}
               </button>
-            ))}
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              aria-expanded={moveOpen}
+              class="submenu-toggle"
+              onClick={() => setMoveOpen(!moveOpen)}
+            >
+              <Icon d={MOVE} size={16} /> {t('moveTo')}
+              <span class="chev">{moveOpen ? '▾' : '▸'}</span>
+            </button>
+            {moveOpen && (
+              <div class="submenu" role="group">
+                {DESTINATIONS.filter((d) => d !== menuObj.zone).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      moveObj(menuObj, d);
+                      setMenu(null);
+                    }}
+                  >
+                    {destName(d)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {menuObj.zone === 'battlefield' && menuObj.card.layout === 'prepare' && (
+              <>
+                <hr />
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!menuObj.prepared || g.resolving !== null}
+                  onClick={() => {
+                    castPrepared(menuObj);
+                    setMenu(null);
+                  }}
+                >
+                  <Icon d={SPARK} size={16} /> {t('castPrepared')}
+                  {menuObj.card.faces[1] ? `: ${menuObj.card.faces[1].printedName}` : ''}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setObj(
+                      menuObj,
+                      { prepared: !menuObj.prepared },
+                      tr(menuObj.prepared ? 'logUnprepared' : 'logPrepared', { card: menuObj.card.printedName }),
+                    );
+                    setMenu(null);
+                  }}
+                >
+                  {menuObj.prepared ? t('unprepare') : t('prepare')}
+                </button>
+              </>
+            )}
             <hr />
             <button
               type="button"
@@ -825,9 +1001,24 @@ export function App() {
             >
               {t('removeCard')}
             </button>
+            <hr />
+            <a class="menu-link" role="menuitem" href={menuObj.card.scryfallUri} target="_blank" rel="noopener noreferrer">
+              <Icon d={EXTERNAL} size={16} /> {t('openScryfall')}
+            </a>
           </div>
         </div>
       )}
+
+      {choicesFor !== null && g.stack.some((x) => x.uid === choicesFor) && (
+        <ChoicesSheet
+          key={choicesFor}
+          item={g.stack.find((x) => x.uid === choicesFor)!}
+          onSave={(ch) => saveChoices(choicesFor, ch)}
+          onClose={() => setChoicesFor(null)}
+        />
+      )}
+
+      {help && <Help onClose={() => toggleHelp(false)} />}
 
       {/* ---- Condivisione del setup ---- */}
       {share && (

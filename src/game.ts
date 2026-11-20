@@ -1,3 +1,4 @@
+import type { Choices } from './choices';
 import type { Card } from './scryfall';
 
 export type PlayerId = 'A' | 'B' | 'C' | 'D';
@@ -24,6 +25,10 @@ export interface CardObj {
   controller: PlayerId;
   zone: Zone;
   token?: boolean;
+  /** TAPpato (girato di lato) */
+  tapped?: boolean;
+  /** Preparato: può lanciare una copia della sua magia di preparazione */
+  prepared?: boolean;
 }
 
 /** Tipo di oggetto in pila: magia, abilità attivata (CR 602) o innescata (CR 603). */
@@ -39,6 +44,10 @@ export interface StackItem {
   kind: StackKind;
   /** testo dell'abilità (solo per le abilità) */
   text?: string;
+  /** scelte fatte lanciando o attivando: modalità, X, faccia, costi… */
+  choices?: Choices;
+  /** copia di una magia (es. magia preparata): lasciando la pila cessa di esistere (CR 704.5e) */
+  copy?: boolean;
 }
 
 /** Tutto lo stato di gioco: è ciò che si salva nella cronologia e che si condivide. */
@@ -134,4 +143,25 @@ export function relocate(g: Game, src: Source, dest: Destination): { game: Game;
   }
   const newKey = dest === 'stack' ? objKey.stack(uid) : dest === 'battlefield' ? objKey.perm(uid) : where!;
   return { game: { ...next, gone: { ...next.gone, [oldKey]: newKey } }, tokenGone: false };
+}
+
+/** Dove va una magia quando lascia la pila. */
+export type LeaveTo = Zone | 'hand' | 'cease';
+
+/**
+ * Destinazione di una magia che lascia la pila.
+ * resolved = true se si è risolta, false se non si è risolta (bersagli illegali) o è stata rimossa.
+ */
+export function leaveDestination(it: StackItem, resolved: boolean, permanent: boolean): LeaveTo {
+  if (it.kind !== 'spell' || it.copy) return 'cease'; // abilità e copie cessano di esistere
+  const extras = it.choices?.extras ?? [];
+  // Flashback, Jump-start: esiliata ogni volta che lascerebbe la pila (CR 702.34a, 702.133a)
+  if (extras.includes('Flashback') || extras.includes('Jump-start')) return 'exile';
+  if (!resolved) return 'graveyard';
+  // Avventura lanciata come avventura: in esilio, poi si può lanciare la creatura (CR 715.4)
+  if (it.card.layout === 'adventure' && it.choices?.face === 1) return 'exile';
+  if (permanent) return 'battlefield';
+  // Buyback: torna in mano al proprietario (CR 702.27a)
+  if (extras.includes('Buyback')) return 'hand';
+  return 'graveyard';
 }

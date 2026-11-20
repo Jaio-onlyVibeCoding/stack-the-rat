@@ -34,7 +34,23 @@ interface RawFace {
 interface RawCard extends RawFace {
   id: string;
   lang: string;
+  layout: string;
+  scryfall_uri: string;
+  keywords?: string[];
   card_faces?: RawFace[];
+}
+
+/** Una faccia (o metà) di una carta con più parti: carta divisa, avventura, bifronte, preparazione. */
+export interface Face {
+  name: string;
+  printedName: string;
+  manaCost: string;
+  typeLine: string;
+  text: string;
+  oracleText: string;
+  image?: string;
+  /** Se una magia lanciata con questa faccia entra sul campo di battaglia */
+  isPermanent: boolean;
 }
 
 export interface Card {
@@ -53,27 +69,52 @@ export interface Card {
   art?: string;
   /** Se risolve, entra sul campo di battaglia (CR 608.3) invece di andare al cimitero */
   isPermanent: boolean;
+  /** Struttura della carta su Scryfall: normal, split, adventure, modal_dfc, transform, prepare… */
+  layout: string;
+  /** Facce/metà della carta (vuoto se è una carta semplice) */
+  faces: Face[];
+  /** Parole chiave inglesi (Kicker, Flashback…) */
+  keywords: string[];
+  /** Pagina della carta su scryfall.com */
+  scryfallUri: string;
 }
 
 const PERMANENT_TYPES = /\b(Creature|Artifact|Enchantment|Planeswalker|Land|Battle)\b/;
 
 export function toCard(r: RawCard): Card {
-  // Le carte bifronte hanno immagini e testi dentro card_faces: usiamo il fronte
+  // Le carte con più facce hanno immagini e testi dentro card_faces: di default usiamo il fronte
   const f = r.card_faces?.[0];
   const img = r.image_uris ?? f?.image_uris;
+  const faces: Face[] = (r.card_faces ?? []).map((x) => ({
+    name: x.name,
+    printedName: x.printed_name ?? x.name,
+    manaCost: x.mana_cost ?? '',
+    typeLine: x.printed_type_line ?? x.type_line ?? '',
+    text: x.printed_text ?? x.oracle_text ?? '',
+    oracleText: x.oracle_text ?? '',
+    image: x.image_uris?.normal,
+    isPermanent: PERMANENT_TYPES.test(x.type_line ?? ''),
+  }));
+  // Nome stampato: per le carte con più facce lo ricostruiamo dalle facce
+  const printedName =
+    r.printed_name ?? (faces.length ? faces.map((x) => x.printedName).join(' // ') : r.name);
   return {
     scryfallId: r.id,
     name: r.name,
-    printedName: r.printed_name ?? f?.printed_name ?? r.name,
+    printedName,
     lang: r.lang,
     manaCost: r.mana_cost ?? f?.mana_cost ?? '',
     typeLine: r.printed_type_line ?? r.type_line ?? f?.printed_type_line ?? f?.type_line ?? '',
-    text: r.printed_text ?? r.oracle_text ?? f?.printed_text ?? f?.oracle_text ?? '',
-    oracleText: r.oracle_text ?? f?.oracle_text ?? '',
+    text: r.printed_text ?? r.oracle_text ?? faces.map((x) => x.text).join('\n—\n'),
+    oracleText: r.oracle_text ?? faces.map((x) => x.oracleText).join('\n—\n'),
     image: img?.normal,
     art: img?.art_crop,
     // tipo inglese (Oracle) del fronte: le carte bifronte lanciate usano il fronte
     isPermanent: PERMANENT_TYPES.test(f?.type_line ?? r.type_line ?? ''),
+    layout: r.layout,
+    faces,
+    keywords: r.keywords ?? [],
+    scryfallUri: r.scryfall_uri,
   };
 }
 
