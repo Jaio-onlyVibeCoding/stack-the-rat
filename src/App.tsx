@@ -1275,8 +1275,8 @@ export function App() {
       title={t('exile')}
       onClick={() => togglePanel('exile')}
     >
-      <Portal />
-      <span>{exile.length}</span>
+      {t('exile')}
+      <span class="count">{exile.length}</span>
     </button>
   );
 
@@ -1290,12 +1290,13 @@ export function App() {
           <>
             <button
               type="button"
-              class={`icon-btn${searchOpen ? ' on' : ''}`}
+              class={`text-btn${searchOpen ? ' on' : ''}`}
               aria-pressed={searchOpen}
               aria-label={t('searchLabel')}
               onClick={() => setSearchOpen(!searchOpen)}
             >
-              <Icon d={SEARCH} size={18} />
+              <Icon d={SEARCH} size={14} />
+              {t('addBtn')}
             </button>
             {exileButton}
           </>

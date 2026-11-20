@@ -754,3 +754,23 @@ input { width: 100%; }
 .log-id { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; margin-inline-end: 4px; }
 .players-select select { min-height: 28px; padding: 0 6px; font-size: 14px; }
 @media (max-width: 699px), (max-height: 500px) { .players-select select { font-size: 13px; max-width: 112px; } }
+
+/* ---------- Intestazione: pulsanti testuali "Aggiungi" ed "Esilio" ---------- */
+.text-btn {
+  flex: none; height: 30px; display: inline-flex; align-items: center; gap: 3px; padding: 0 7px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer;
+  font-size: 12.5px; font-weight: 600;
+}
+.text-btn.on { border-color: var(--accent); color: var(--accent); }
+.exile-btn { font-size: 13px; font-weight: 600; padding: 0 8px; gap: 5px; }
+.exile-btn .count {
+  min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--line);
+  display: inline-grid; place-items: center; font-size: 11px;
+}
+@media (max-width: 699px), (max-height: 500px) {
+  .top { gap: 4px; }
+  h1 { font-size: 13px; }
+  .top .exile-btn { min-width: 0; height: 30px; padding: 0 6px; font-size: 12.5px; gap: 3px; }
+  .top .icon-btn { width: 28px; height: 30px; }
+  .players-select select { font-size: 12px; max-width: 96px; min-height: 30px; padding: 0 4px; }
+}
