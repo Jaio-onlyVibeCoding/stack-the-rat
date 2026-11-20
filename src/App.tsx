@@ -69,6 +69,9 @@ const FULL = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5';
 const EXIT_FULL = 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5';
 const WIDEN = 'M8 7l-5 5 5 5M16 7l5 5-5 5';
 const NARROW = 'M4 7l5 5-5 5M20 7l-5 5 5 5';
+const SEARCH = 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4';
+const KEBAB = 'M12 5h.01M12 12h.01M12 19h.01';
+const GEAR = 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -130,6 +133,19 @@ export function App() {
   const stackCol = useRef<HTMLElement>(null);
   /** carta aperta in grande con i chiarimenti */
   const [viewer, setViewer] = useState<Card | null>(null);
+  /** telefono: schermo stretto (verticale) o basso (orizzontale) → interfaccia compatta */
+  const NARROW_QUERY = '(max-width: 699px), (max-height: 500px)';
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const m = window.matchMedia(NARROW_QUERY);
+    const f = () => setNarrow(m.matches);
+    m.addEventListener('change', f);
+    return () => m.removeEventListener('change', f);
+  }, []);
+  /** telefono: ricerca aperta, menu ⋮ aperto, opzioni del pannello priorità aperte */
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [prioOpts, setPrioOpts] = useState(false);
   /** colonna della pila larga il doppio */
   const [wideStack, setWideStack] = useState(false);
   const [isFull, setIsFull] = useState(false);
@@ -872,31 +888,66 @@ export function App() {
       : g.players.length === 3
         ? [['A', 'C'], ['B']]
         : [['A', 'D'], ['B', 'C']];
+  /** Pulsante dell'esilio: accanto alla ricerca (monitor) o nell'intestazione (telefono) */
+  const exileButton = (
+    <button
+      type="button"
+      class={`exile-btn${panels.includes('exile') ? ' on' : ''}${drag?.over === 'exile' ? ' drop-over' : ''}`}
+      data-obj="exile"
+      data-drop="exile"
+      aria-pressed={panels.includes('exile')}
+      aria-label={`${t('exile')}: ${exile.length}`}
+      title={t('exile')}
+      onClick={() => togglePanel('exile')}
+    >
+      <Portal />
+      <span>{exile.length}</span>
+    </button>
+  );
+
   const menuObj = menu ? g.objs.find((o) => o.uid === menu.uid) : undefined;
 
   return (
     <main class={`shell${targeting !== null ? ' targeting' : ''}`} onClick={onBackgroundTap}>
       <header class="top">
         <h1>Stack The Rat</h1>
-        <div class="player-count" role="group" aria-label={t('players')}>
-          {document.fullscreenEnabled && (
+        {narrow && (
+          <>
             <button
               type="button"
-              class="share-btn"
-              onClick={toggleFullscreen}
-              aria-pressed={isFull}
-              aria-label={t('fullscreen')}
-              title={t('fullscreen')}
+              class={`icon-btn${searchOpen ? ' on' : ''}`}
+              aria-pressed={searchOpen}
+              aria-label={t('searchLabel')}
+              onClick={() => setSearchOpen(!searchOpen)}
             >
-              <Icon d={isFull ? EXIT_FULL : FULL} size={18} />
+              <Icon d={SEARCH} size={18} />
             </button>
+            {exileButton}
+          </>
+        )}
+        <div class="player-count" role="group" aria-label={t('players')}>
+          {!narrow && (
+            <>
+              {document.fullscreenEnabled && (
+                <button
+                  type="button"
+                  class="share-btn"
+                  onClick={toggleFullscreen}
+                  aria-pressed={isFull}
+                  aria-label={t('fullscreen')}
+                  title={t('fullscreen')}
+                >
+                  <Icon d={isFull ? EXIT_FULL : FULL} size={18} />
+                </button>
+              )}
+              <button type="button" class="share-btn" onClick={resetApp} aria-label={t('reset')} title={t('reset')}>
+                <Icon d={RESET} size={18} />
+              </button>
+              <button type="button" class="share-btn" onClick={openShare} aria-label={t('share')} title={t('share')}>
+                <Icon d={SHARE} size={18} />
+              </button>
+            </>
           )}
-          <button type="button" class="share-btn" onClick={resetApp} aria-label={t('reset')} title={t('reset')}>
-            <Icon d={RESET} size={18} />
-          </button>
-          <button type="button" class="share-btn" onClick={openShare} aria-label={t('share')} title={t('share')}>
-            <Icon d={SHARE} size={18} />
-          </button>
           <button type="button" onClick={removePlayer} disabled={g.players.length <= MIN_PLAYERS} aria-label={t('removePlayer')}>
             −
           </button>
@@ -905,17 +956,63 @@ export function App() {
             +
           </button>
         </div>
-        <label class="lang">
-          <span class="sr-only">{t('language')}</span>
-          <select value={lang} onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}>
-            {LANGS.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.code.toUpperCase()}
-              </option>
-            ))}
-          </select>
-        </label>
+        {narrow ? (
+          <button
+            type="button"
+            class={`icon-btn${moreOpen ? ' on' : ''}`}
+            aria-expanded={moreOpen}
+            aria-label={t('moreMenu')}
+            onClick={() => setMoreOpen(!moreOpen)}
+          >
+            <Icon d={KEBAB} size={18} />
+          </button>
+        ) : (
+          <label class="lang">
+            <span class="sr-only">{t('language')}</span>
+            <select value={lang} onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}>
+              {LANGS.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.code.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </header>
+
+      {narrow && moreOpen && (
+        <div class="menu-backdrop" onClick={() => setMoreOpen(false)}>
+          <div class="menu more-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+            {document.fullscreenEnabled && (
+              <button type="button" role="menuitem" onClick={() => { toggleFullscreen(); setMoreOpen(false); }}>
+                <Icon d={isFull ? EXIT_FULL : FULL} size={16} /> {t('fullscreen')}
+              </button>
+            )}
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); openShare(); }}>
+              <Icon d={SHARE} size={16} /> {t('share')}
+            </button>
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); resetApp(); }}>
+              <Icon d={RESET} size={16} /> {t('reset')}
+            </button>
+            <hr />
+            <p class="menu-label">{t('language')}</p>
+            <div class="menu-chips lang-chips">
+              {LANGS.map((l) => (
+                <button
+                  key={l.code}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={lang === l.code}
+                  class={lang === l.code ? 'on' : ''}
+                  onClick={() => { setLang(l.code); setMoreOpen(false); }}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {notice && (
         <div class="notice" role="status">
@@ -926,22 +1023,30 @@ export function App() {
         </div>
       )}
 
-      <div class="search-row">
-        {targeting !== null ? <p class="hint">{t('targetingHint')}</p> : <CardSearch onPick={setPreview} />}
-        <button
-          type="button"
-          class={`exile-btn${panels.includes('exile') ? ' on' : ''}${drag?.over === 'exile' ? ' drop-over' : ''}`}
-          data-obj="exile"
-          data-drop="exile"
-          aria-pressed={panels.includes('exile')}
-          aria-label={`${t('exile')}: ${exile.length}`}
-          title={t('exile')}
-          onClick={() => togglePanel('exile')}
-        >
-          <Portal />
-          <span>{exile.length}</span>
-        </button>
-      </div>
+      {(!narrow || searchOpen || targeting !== null) && (
+        <div class="search-row">
+          {targeting !== null ? (
+            <p class="hint">{t('targetingHint')}</p>
+          ) : (
+            <CardSearch
+              autoFocus={narrow}
+              onPick={(c) => {
+                setPreview(c);
+                setSearchOpen(false);
+              }}
+            />
+          )}
+          {narrow ? (
+            targeting === null && (
+              <button type="button" class="icon-btn" aria-label={t('close')} onClick={() => setSearchOpen(false)}>
+                <Icon d={CROSS} size={16} />
+              </button>
+            )
+          ) : (
+            exileButton
+          )}
+        </div>
+      )}
 
       {panels.length > 0 && (
         <div class="panels">
@@ -979,9 +1084,11 @@ export function App() {
 
         <section class={`stack-col${wideStack ? ' wide' : ''}${drag?.over === 'stack' ? ' drop-over' : ''}`} ref={stackCol} data-drop="stack">
           <div
-            class={`priority${g.priority === null ? ' nobody' : ''}`}
+            class={`priority${g.priority === null ? ' nobody' : ''}${narrow ? ' compact' : ''}`}
             style={{ '--pc': g.priority ? PLAYER_COLOR[g.priority] : '' }}
           >
+            {(!narrow || prioOpts) && (
+              <div class="prio-opts">
             <div class="turn-row">
             <label class="turn">
               {t('turn')}
@@ -1006,6 +1113,8 @@ export function App() {
               <input type="checkbox" checked={phases} onChange={(e) => togglePhases((e.target as HTMLInputElement).checked)} />
               {t('phases')}
             </label>
+              </div>
+            )}
             {phases && (
               <div class="step-row">
                 <StepPicker
@@ -1046,6 +1155,17 @@ export function App() {
                   <button type="button" class="pass" onClick={pass}>
                     {t('pass')}
                   </button>
+                  {narrow && (
+                    <button
+                      type="button"
+                      class={`icon-btn small${prioOpts ? ' on' : ''}`}
+                      aria-expanded={prioOpts}
+                      aria-label={t('options')}
+                      onClick={() => setPrioOpts(!prioOpts)}
+                    >
+                      <Icon d={GEAR} size={16} />
+                    </button>
+                  )}
                 </div>
                 <div class="passes" title={t('passHelp')}>
                   {g.players.map((p) => (

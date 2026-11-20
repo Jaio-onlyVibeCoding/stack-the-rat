@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { getCard, suggest, type Card, type Suggestion } from './scryfall';
 import { langInfo, useI18n } from './i18n';
 
 type Status = 'idle' | 'loading' | 'empty' | 'error';
 
-export function CardSearch({ onPick }: { onPick: (c: Card) => void }) {
+export function CardSearch({ onPick, autoFocus = false }: { onPick: (c: Card) => void; autoFocus?: boolean }) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (autoFocus) input.current?.focus();
+  }, []);
   const { t, lang } = useI18n();
   const [q, setQ] = useState('');
   const [names, setNames] = useState<Suggestion[]>([]);
@@ -55,6 +59,7 @@ export function CardSearch({ onPick }: { onPick: (c: Card) => void }) {
       </label>
       <input
         id="card-search"
+        ref={input}
         type="search"
         autocomplete="off"
         placeholder={t('searchPlaceholder')}
