@@ -339,6 +339,12 @@ export function App() {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [g.stack.length]);
 
+  // Con lo storico aperto, ↶ / ↷ (o un salto) portano in vista il passaggio attuale
+  useEffect(() => {
+    if (!historyOpen) return;
+    document.querySelector('.log li.current')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [pos, historyOpen]);
+
   // Breve evidenziazione della barra storico quando cambia la condizione
   useEffect(() => {
     setFlash(true);
@@ -736,7 +742,7 @@ export function App() {
     const copy: StackItem = { ...it, uid: newUid(), copy: true, targets: keepTargets ? [...it.targets] : [] };
     commit(
       { ...g, stack: [...g.stack, copy], passed: [] },
-      tr('logCopy', { p: it.controller, card: itemName(it) }),
+      tr(keepTargets ? 'logCopy' : 'logCopyNew', { p: it.controller, card: itemName(it) }),
     );
     // nuovi bersagli: si entra subito in modalità bersaglio per la copia
     if (!keepTargets) setTargeting(copy.uid);
@@ -1749,8 +1755,8 @@ export function App() {
                   key={`${e.i}-${e.j}`}
                   class={`${e.i > pos ? 'future' : e.i === pos ? 'current' : ''}${locked === e.i ? ' locked' : ''}`}
                 >
-                  <button type="button" class="log-text" onClick={() => goTo(e.i)}>
-                    <time>{e.time}</time> {e.text}
+                  <button type="button" class="log-text" onClick={() => goTo(e.i)} title={e.time}>
+                    <span class="log-id">#{e.i}</span> {e.text}
                   </button>
                   {head && (
                     <span class="log-tools">

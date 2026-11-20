@@ -751,3 +751,4 @@ input { width: 100%; }
 .log li.locked .log-text { box-shadow: inset 3px 0 0 var(--accent); }
 .locked-note { display: flex; align-items: center; gap: 4px; color: var(--accent); }
 .danger-btn { background: var(--danger) !important; color: #fff !important; }
+.log-id { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; margin-inline-end: 4px; }
