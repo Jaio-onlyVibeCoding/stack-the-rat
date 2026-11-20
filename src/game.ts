@@ -65,7 +65,13 @@ export interface Game {
   gone: Record<string, string>;
   /** uid dell'oggetto in risoluzione */
   resolving: number | null;
+  /** sottofase/fase attuale (indice in 0..11, vedi STEP_COUNT), usata se "Fasi e sottofasi" è attivo */
+  step: number;
 }
+
+/** 12 momenti del turno (CR 500): STAP, mantenimento, acquisizione, principale 1, 5 di combattimento, principale 2, finale, cancellazione. */
+export const STEP_COUNT = 12;
+export const STEP = { untap: 0, upkeep: 1, main1: 3, cleanup: 11 };
 
 export const initialGame = (): Game => ({
   players: ['A', 'B'],
@@ -76,6 +82,7 @@ export const initialGame = (): Game => ({
   objs: [],
   gone: {},
   resolving: null,
+  step: STEP.main1,
 });
 
 /** Chiavi univoche per tutto ciò che può essere bersagliato (usate anche nel DOM: data-obj). */

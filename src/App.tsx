@@ -12,6 +12,8 @@ import {
   objKey,
   leaveDestination,
   relocate,
+  STEP,
+  STEP_COUNT,
   type CardObj,
   type Destination,
   type Game,
@@ -20,7 +22,7 @@ import {
   type StackKind,
 } from './game';
 import { LANGS, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
-import type { Card } from './scryfall';
+import { getCard, type Card } from './scryfall';
 import { decodeGame, encodeGame, sharedCodeFromUrl, shareUrl } from './share';
 import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
@@ -61,6 +63,7 @@ const SPARK = 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2
 const EXTERNAL = 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5';
 const DOTS = 'M5 12h.01M12 12h.01M19 12h.01';
 const EYE = 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
+const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
 /** Una "condizione" della partita: lo stato e i messaggi che l'hanno prodotta. */
@@ -133,6 +136,45 @@ export function App() {
       localStorage.setItem('strict', on ? '1' : '0');
     } catch {}
   }
+  /** carte di esempio (placeholder) mostrate finché non si aggiunge una carta; tornano solo con il reset */
+  const [showExamples, setShowExamples] = useState(true);
+  const [examples, setExamples] = useState<{ perm?: Card; spell?: Card }>({});
+  useEffect(() => {
+    const l = langInfo(lang).scryfall;
+    Promise.all([getCard('Thrumming Stone', l), getCard('Rat Colony', l)])
+      .then(([perm, spell]) => setExamples({ perm: perm ?? undefined, spell: spell ?? undefined }))
+      .catch(() => {});
+  }, [lang]);
+  /** gestione di fasi e sottofasi nel passaggio di priorità */
+  const [phases, setPhases] = useState(() => {
+    try {
+      return localStorage.getItem('phases') === '1';
+    } catch {
+      return false;
+    }
+  });
+  function togglePhases(on: boolean) {
+    setPhases(on);
+    try {
+      localStorage.setItem('phases', on ? '1' : '0');
+    } catch {}
+  }
+  const stepName = (i: number) => t('stepNames').split('|')[i] ?? '';
+  const phaseName = (i: number) => t('phaseNames').split('|')[i] ?? '';
+
+  function resetApp() {
+    if (!window.confirm(t('resetConfirm'))) return;
+    setTimeline([{ game: initialGame(), messages: [t('logReset')], time: now() }]);
+    setPos(0);
+    setTargeting(null);
+    setPanels([]);
+    setCollapsed([]);
+    setMenu(null);
+    setChoicesFor(null);
+    setPreview(null);
+    setShowExamples(true);
+  }
+
   const { drag, start: startDrag, justDropped } = useDrag((item, target) => performDrop(item, target));
 
   // Apertura di un setup condiviso (#s=...)
@@ -143,6 +185,7 @@ export function App() {
     decodeGame(code)
       .then((game) => {
         setTimeline([{ game, messages: [t('sharedLoaded')], time: now() }]);
+        setShowExamples(false);
         setPos(0);
         setNotice(null);
       })
@@ -258,6 +301,7 @@ export function App() {
       },
       tr('logCast', { p: controller, card: preview.printedName }),
     );
+    setShowExamples(false);
     // CR 601.2b: modalità, X, costi e metà si scelgono subito dopo l'annuncio
     if (needsChoices(preview)) setChoicesFor(uid);
     setPreview(null);
@@ -351,6 +395,7 @@ export function App() {
     );
     setAbilityPick(null);
     setPreview(null);
+    setShowExamples(false);
   }
 
   function putOnBattlefield(controller: PlayerId) {
@@ -360,6 +405,7 @@ export function App() {
       tr('logBattlefield', { p: controller, card: preview.printedName }),
     );
     setPreview(null);
+    setShowExamples(false);
   }
   function moveObj(o: CardObj, dest: Destination, controller?: PlayerId) {
     const holder = controller ?? (o.zone === 'battlefield' ? o.controller : o.owner);
@@ -401,6 +447,24 @@ export function App() {
         tr('logControl', { p, card: itemName(it) }),
       );
     }
+  }
+
+  /** Copia di un oggetto in pila: stesse scelte e bersagli (CR 707.10). Va in cima alla pila. */
+  function copyItem(it: StackItem) {
+    const copy: StackItem = { ...it, uid: newUid(), copy: true, targets: [...it.targets] };
+    commit(
+      { ...g, stack: [...g.stack, copy], passed: [] },
+      tr('logCopy', { p: it.controller, card: itemName(it) }),
+    );
+  }
+  /** Duplica: come se l'oggetto venisse aggiunto di nuovo dalla barra di ricerca. */
+  function duplicateItem(it: StackItem) {
+    if (g.resolving !== null && it.kind !== 'triggered') return;
+    if (it.kind !== 'triggered' && !guard(it.controller)) return;
+    const dup: StackItem = { uid: newUid(), card: it.card, owner: it.owner, controller: it.controller, targets: [], kind: it.kind, text: it.text };
+    const priority = it.kind === 'triggered' ? g.priority : it.controller;
+    commit({ ...g, stack: [...g.stack, dup], priority, passed: [] }, tr('logDuplicate', { p: it.controller, card: it.card.printedName }));
+    if (it.kind === 'spell' && needsChoices(it.card)) setChoicesFor(dup.uid);
   }
 
   /** Riordino della pila: modifica del setup, non un'azione di gioco. */
@@ -479,7 +543,12 @@ export function App() {
     }
     const top = g.stack[g.stack.length - 1];
     if (!top) {
-      commit({ ...g, passed: [], priority: g.active }, passMsg, t('emptyPass'));
+      if (!phases) {
+        commit({ ...g, passed: [], priority: g.active }, passMsg, t('emptyPass'));
+        return;
+      }
+      const { game, msgs } = advanceStep(g);
+      commit(game, passMsg, ...msgs);
       return;
     }
     // CR 608.2b: i bersagli si ricontrollano all'inizio della risoluzione
@@ -495,6 +564,36 @@ export function App() {
     // Durante la risoluzione nessuno ha priorità
     commit({ ...g, passed: [], priority: null, resolving: top.uid }, ...msgs);
     setTargeting(null);
+  }
+
+  /**
+   * Pila vuota e tutti passano: si va alla sottofase/fase successiva (CR 500.2).
+   * STAP e cancellazione: di norma nessuno riceve priorità; nella STAP il giocatore attivo STAPpa i suoi permanenti (502.3).
+   */
+  function advanceStep(base: Game): { game: Game; msgs: string[] } {
+    let step = base.step + 1;
+    let active = base.active;
+    let objs = base.objs;
+    const msgs: string[] = [];
+    if (step === STEP.cleanup) {
+      msgs.push(t('logCleanup'));
+      step++;
+    }
+    if (step >= STEP_COUNT) {
+      active = nextPlayer(active);
+      step = STEP.untap;
+      msgs.push(tr('logTurn', { p: active }));
+    }
+    if (step === STEP.untap) {
+      objs = objs.map((o) => (o.zone === 'battlefield' && o.controller === active ? { ...o, tapped: false } : o));
+      msgs.push(tr('logUntapStep', { p: active }));
+      step = STEP.upkeep;
+    }
+    msgs.push(tr('logStep', { step: stepName(step), p: active }));
+    return { game: { ...base, objs, step, active, priority: active, passed: [] }, msgs };
+  }
+  function setStep(step: number) {
+    commit({ ...g, step, priority: g.active, passed: [] }, tr('logStepSet', { step: stepName(step) }));
   }
 
   /** Fine della risoluzione: la carta va nella sua zona, poi priorità al giocatore attivo (CR 117.3b). */
@@ -533,9 +632,9 @@ export function App() {
     // bersaglio scelto: la modalità bersaglio si chiude da sola
     setTargeting(null);
   }
+  /** Mirino → modalità bersaglio (icona X). In modalità bersaglio, la X cancella tutte le frecce dell'oggetto. */
   function onTargetButton(item: StackItem) {
-    if (targeting === item.uid || item.targets.length > 0) {
-      // Icona X: cancella tutte le frecce di questo oggetto
+    if (targeting === item.uid) {
       if (item.targets.length) {
         commit(
           { ...g, stack: g.stack.map((it) => (it.uid === item.uid ? { ...it, targets: [] } : it)) },
@@ -698,7 +797,15 @@ export function App() {
               )}
               {!isCollapsed && (
               <div class="field">
-                {mine.length === 0 && <p class="status">{t('battlefieldEmpty')}</p>}
+                {mine.length === 0 && !(showExamples && id === 'A' && examples.perm) && (
+                  <p class="status">{t('battlefieldEmpty')}</p>
+                )}
+                {showExamples && id === 'A' && examples.perm?.image && (
+                  <div class="perm example">
+                    <img src={examples.perm.image} alt={examples.perm.printedName} draggable={false} />
+                    <span class="example-tag">{t('example')}</span>
+                  </div>
+                )}
                 {mine.map((o) => renderTile(o, 'perm'))}
               </div>
               )}
@@ -720,6 +827,9 @@ export function App() {
       <header class="top">
         <h1>Stack The Rat</h1>
         <div class="player-count" role="group" aria-label={t('players')}>
+          <button type="button" class="share-btn" onClick={resetApp} aria-label={t('reset')} title={t('reset')}>
+            <Icon d={RESET} size={18} />
+          </button>
           <button type="button" class="share-btn" onClick={openShare} aria-label={t('share')} title={t('share')}>
             <Icon d={SHARE} size={18} />
           </button>
@@ -821,6 +931,26 @@ export function App() {
               {t('help')}
             </label>
             </div>
+            <label class="help-toggle" title={t('phasesHelp')}>
+              <input type="checkbox" checked={phases} onChange={(e) => togglePhases((e.target as HTMLInputElement).checked)} />
+              {t('phases')}
+            </label>
+            {phases && (
+              <label class="step-select">
+                <span>{phaseName(g.step)}</span>
+                <select
+                  value={g.step}
+                  disabled={g.resolving !== null}
+                  onChange={(e) => setStep(Number((e.target as HTMLSelectElement).value))}
+                >
+                  {Array.from({ length: STEP_COUNT }, (_, i) => (
+                    <option key={i} value={i}>
+                      {stepName(i)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label class="help-toggle" title={t('strictHelp')}>
               <input type="checkbox" checked={strict} onChange={(e) => toggleStrict((e.target as HTMLInputElement).checked)} />
               {t('strict')}
@@ -856,7 +986,18 @@ export function App() {
 
           <h2>{t('stack')}</h2>
           {g.stack.length === 0 ? (
-            <p class="status">{t('stackEmpty')}</p>
+            <>
+              <p class="status">{t('stackEmpty')}</p>
+              {showExamples && examples.spell?.image && (
+                <ol class="pile">
+                  <li class="pile-card is-top example" style={{ '--pc': PLAYER_COLOR.A }}>
+                    <img src={examples.spell.image} alt={examples.spell.printedName} draggable={false} />
+                    <span class="ctrl">A</span>
+                    <span class="example-tag">{t('example')}</span>
+                  </li>
+                </ol>
+              )}
+            </>
           ) : (
             // La carta più vecchia sta in alto e dietro; l'ultima (in cima alla pila) è intera e illuminata
             <ol class="pile">
@@ -865,7 +1006,7 @@ export function App() {
                 const isTop = i === g.stack.length - 1;
                 const isSource = targeting === it.uid;
                 const isResolving = g.resolving === it.uid;
-                const showCross = isSource || it.targets.length > 0;
+                const showCross = isSource;
                 return (
                   <li
                     key={it.uid}
@@ -1178,6 +1319,23 @@ export function App() {
           item={g.stack.find((x) => x.uid === choicesFor)!}
           onSave={(ch) => saveChoices(choicesFor, ch)}
           players={g.players}
+          onCopy={() => {
+            const it = g.stack.find((x) => x.uid === choicesFor);
+            setChoicesFor(null);
+            if (it) copyItem(it);
+          }}
+          onDuplicate={() => {
+            const it = g.stack.find((x) => x.uid === choicesFor);
+            setChoicesFor(null);
+            if (it) duplicateItem(it);
+          }}
+          onMove={(dir) => {
+            const idx = g.stack.findIndex((x) => x.uid === choicesFor);
+            setChoicesFor(null);
+            if (idx >= 0) reorderStack(g.stack[idx], idx + dir);
+          }}
+          index={g.stack.findIndex((x) => x.uid === choicesFor)}
+          size={g.stack.length}
           onControl={(p) => giveControl({ item: g.stack.find((x) => x.uid === choicesFor) }, p)}
           onClose={() => setChoicesFor(null)}
         />

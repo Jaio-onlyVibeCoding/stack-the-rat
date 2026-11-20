@@ -18,6 +18,11 @@ export function ChoicesSheet({
   onClose,
   players,
   onControl,
+  onCopy,
+  onDuplicate,
+  onMove,
+  index,
+  size,
 }: {
   item: StackItem;
   onSave: (ch: Choices) => void;
@@ -25,6 +30,13 @@ export function ChoicesSheet({
   players: PlayerId[];
   /** cambia il controllore dell'oggetto in pila (es. Commandeer) */
   onControl: (p: PlayerId) => void;
+  onCopy: () => void;
+  onDuplicate: () => void;
+  /** +1 = sopra (verso la cima), -1 = sotto */
+  onMove: (dir: 1 | -1) => void;
+  /** posizione nella pila (0 = fondo) e numero di oggetti */
+  index: number;
+  size: number;
 }) {
   const { t } = useI18n();
   const [ch, setCh] = useState<Choices>(item.choices ?? {});
@@ -67,6 +79,24 @@ export function ChoicesSheet({
     <div class="sheet-backdrop" onClick={onClose}>
       <section class="sheet choices-sheet" onClick={(e) => e.stopPropagation()}>
         <h2>{t('choicesTitle').replace('{card}', card.printedName)}</h2>
+
+        <fieldset>
+          <legend>{t('stackActions')}</legend>
+          <div class="toggles">
+            <button type="button" onClick={onCopy}>
+              {t('copyItem')}
+            </button>
+            <button type="button" onClick={onDuplicate}>
+              {t('duplicate')}
+            </button>
+            <button type="button" onClick={() => onMove(1)} disabled={index >= size - 1}>
+              ↑ {t('moveUp')}
+            </button>
+            <button type="button" onClick={() => onMove(-1)} disabled={index <= 0}>
+              ↓ {t('moveDown')}
+            </button>
+          </div>
+        </fieldset>
 
         <fieldset>
           <legend>{t('controller')}</legend>

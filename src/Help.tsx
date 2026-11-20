@@ -31,6 +31,19 @@ export function Help({ onClose }: { onClose: () => void }) {
         </ol>
         <p>{t('helpTrigger')}</p>
         <p>{t('helpPriority')}</p>
+        <h3>{t('rulesLinks')}</h3>
+        <ul class="help-links">
+          <li>
+            <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noopener noreferrer">
+              ↗ {t('rulesWotc')}
+            </a>
+          </li>
+          <li>
+            <a href="https://mtg.fandom.com/wiki/Portal:Rules" target="_blank" rel="noopener noreferrer">
+              ↗ {t('rulesWiki')}
+            </a>
+          </li>
+        </ul>
       </div>
     </aside>
   );

@@ -36,7 +36,7 @@ export function CardViewer({ card, onClose }: { card: Card; onClose: () => void 
         <aside class="viewer-side">
           <div class="viewer-head">
             <h2>{card.printedName}</h2>
-            <button type="button" class="panel-close" aria-label={t('close')} onClick={onClose}>
+            <button type="button" class="viewer-close" aria-label={t('close')} onClick={onClose}>
               ✕
             </button>
           </div>

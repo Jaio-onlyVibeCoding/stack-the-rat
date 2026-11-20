@@ -18,6 +18,8 @@ interface Shared {
   /** carte: [uid, idScryfall, proprietario, controllore, zona, token, tappata, preparata] */
   o: [number, string, PlayerId, PlayerId, Zone, 0 | 1, (0 | 1)?, (0 | 1)?][];
   g: Record<string, string>;
+  /** sottofase */
+  st?: number;
 }
 
 const toB64Url = (bytes: Uint8Array) => {
@@ -46,6 +48,7 @@ export async function encodeGame(g: Game): Promise<string> {
     s: g.stack.map((x) => [x.uid, x.card.scryfallId, x.owner, x.controller, x.targets, x.kind, x.text, x.choices, x.copy ? 1 : 0]),
     o: g.objs.map((o) => [o.uid, o.card.scryfallId, o.owner, o.controller, o.zone, o.token ? 1 : 0, o.tapped ? 1 : 0, o.prepared ? 1 : 0]),
     g: g.gone,
+    st: g.step,
   };
   const bytes = new TextEncoder().encode(JSON.stringify(shared));
   return toB64Url(await pipe(bytes, new CompressionStream('deflate-raw')));
@@ -65,6 +68,7 @@ export async function decodeGame(code: string): Promise<Game> {
     passed: s.ps,
     resolving: s.r,
     gone: s.g,
+    step: s.st ?? 3,
     stack: s.s
       .filter((x) => cards.has(x[1]))
       .map(([uid, id, owner, controller, targets, kind, text, choices, copy]) => ({
