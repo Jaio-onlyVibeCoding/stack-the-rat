@@ -1152,6 +1152,16 @@ export function App() {
                   <span class="prio-who">
                     {t('priority')}: <b>{g.priority ?? t('nobody')}</b>
                   </span>
+                  {narrow && (
+                    <span class="passes inline" title={t('passHelp')}>
+                      {g.players.map((p) => (
+                        <span key={p} class={g.passed.includes(p) ? 'passed' : ''} style={{ '--pc': PLAYER_COLOR[p] }}>
+                          {p}
+                          {g.passed.includes(p) ? '✓' : ''}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                   <button type="button" class="pass" onClick={pass}>
                     {t('pass')}
                   </button>
@@ -1167,14 +1177,14 @@ export function App() {
                     </button>
                   )}
                 </div>
-                <div class="passes" title={t('passHelp')}>
+                {!narrow && <div class="passes" title={t('passHelp')}>
                   {g.players.map((p) => (
                     <span key={p} class={g.passed.includes(p) ? 'passed' : ''} style={{ '--pc': PLAYER_COLOR[p] }}>
                       {p}
                       {g.passed.includes(p) ? ' ✓' : ''}
                     </span>
                   ))}
-                </div>
+                </div>}
               </>
             )}
           </div>

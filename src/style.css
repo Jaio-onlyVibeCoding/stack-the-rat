@@ -676,3 +676,7 @@ input { width: 100%; }
   .stack-col { padding: 10px 6px 12px; }
 }
 .step-current b, .step-current span { white-space: nowrap; }
+.stack-col { overflow-x: hidden; }
+.passes.inline { display: inline-flex; gap: 2px; flex-wrap: nowrap; }
+.priority.compact .prio-who { flex: 0 1 auto; }
+.priority.compact .passes.inline { flex: 1; }
