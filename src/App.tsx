@@ -25,6 +25,8 @@ import { decodeGame, encodeGame, sharedCodeFromUrl, shareUrl } from './share';
 import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
 import { Help } from './Help';
+import { CardViewer } from './CardViewer';
+import { useDrag, type DragItem } from './dnd';
 
 // ---------- Icone ----------
 const Icon = ({ d, size = 22 }: { d: string; size?: number }) => (
@@ -58,6 +60,8 @@ const MOVE = 'M5 12h14M13 6l6 6-6 6';
 const SPARK = 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6';
 const EXTERNAL = 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5';
 const DOTS = 'M5 12h.01M12 12h.01M19 12h.01';
+const EYE = 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
+const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
 /** Una "condizione" della partita: lo stato e i messaggi che l'hanno prodotta. */
 interface Snapshot {
@@ -113,6 +117,23 @@ export function App() {
     } catch {}
   }
   const stackCol = useRef<HTMLElement>(null);
+  /** carta aperta in grande con i chiarimenti */
+  const [viewer, setViewer] = useState<Card | null>(null);
+  /** solo chi ha la priorità può lanciare, attivare, mettere in pila */
+  const [strict, setStrict] = useState(() => {
+    try {
+      return localStorage.getItem('strict') === '1';
+    } catch {
+      return false;
+    }
+  });
+  function toggleStrict(on: boolean) {
+    setStrict(on);
+    try {
+      localStorage.setItem('strict', on ? '1' : '0');
+    } catch {}
+  }
+  const { drag, start: startDrag, justDropped } = useDrag((item, target) => performDrop(item, target));
 
   // Apertura di un setup condiviso (#s=...)
   useEffect(() => {
@@ -178,6 +199,14 @@ export function App() {
     if (dest === 'exile') return t('exileZone');
     return t('stackZone');
   }
+  /** Con "Solo chi ha priorità" attivo, solo quel giocatore può lanciare/attivare/mettere in pila. */
+  const mayAct = (p: PlayerId) => !strict || g.priority === p;
+  function guard(p: PlayerId): boolean {
+    if (mayAct(p)) return true;
+    setNotice(tr('notAllowed', { p: g.priority ?? t('nobody') }));
+    setTimeout(() => setNotice(null), 3500);
+    return false;
+  }
   const destName = (d: Destination) =>
     d === 'battlefield' ? t('battlefield') : d === 'graveyard' ? t('graveyard') : d === 'exile' ? t('exile') : t('stack');
 
@@ -217,7 +246,7 @@ export function App() {
     canChooseFace(c) || hasX(c, null) || !!parseModes(c, null) || costKeywords(c).additional.length > 0 || costKeywords(c).alternative.length > 0;
 
   function cast(controller: PlayerId) {
-    if (!preview || g.resolving !== null) return;
+    if (!preview || g.resolving !== null || !guard(controller)) return;
     const uid = newUid();
     // CR 117.3c: chi lancia una magia riceve di nuovo la priorità; i passaggi precedenti non contano più
     commit(
@@ -285,7 +314,7 @@ export function App() {
   }
   /** Magia preparata: si lancia una copia della magia di preparazione; la creatura smette di essere preparata. */
   function castPrepared(o: CardObj) {
-    if (g.resolving !== null || !o.card.faces[1]) return;
+    if (g.resolving !== null || !o.card.faces[1] || !guard(o.controller)) return;
     const item: StackItem = {
       uid: newUid(),
       card: o.card,
@@ -332,10 +361,11 @@ export function App() {
     );
     setPreview(null);
   }
-  function moveObj(o: CardObj, dest: Destination) {
-    const { game, tokenGone } = relocate(g, { kind: 'obj', obj: o }, dest);
+  function moveObj(o: CardObj, dest: Destination, controller?: PlayerId) {
+    const holder = controller ?? (o.zone === 'battlefield' ? o.controller : o.owner);
+    if (dest === 'stack' && !guard(holder)) return;
+    const { game, tokenGone } = relocate(g, { kind: 'obj', obj: o }, dest, controller);
     let next = game;
-    const holder = o.zone === 'battlefield' ? o.controller : o.owner;
     // Mettere una carta in pila dà la priorità a chi la controlla (salvo durante una risoluzione)
     if (dest === 'stack' && !tokenGone && g.resolving === null) next = { ...next, priority: holder, passed: [] };
     const card = o.card.printedName;
@@ -356,6 +386,71 @@ export function App() {
   function removeObj(o: CardObj) {
     commit({ ...g, objs: g.objs.filter((x) => x.uid !== o.uid) }, tr('logRemoveCard', { card: o.card.printedName }));
   }
+  /** Cambiare controllo non crea un nuovo oggetto: le frecce restano valide. */
+  function giveControl(target: { obj?: CardObj; item?: StackItem }, p: PlayerId) {
+    if (target.obj) {
+      const o = target.obj;
+      commit(
+        { ...g, objs: g.objs.map((x) => (x.uid === o.uid ? { ...x, controller: p } : x)) },
+        tr('logControl', { p, card: o.card.printedName }),
+      );
+    } else if (target.item) {
+      const it = target.item;
+      commit(
+        { ...g, stack: g.stack.map((x) => (x.uid === it.uid ? { ...x, controller: p } : x)) },
+        tr('logControl', { p, card: itemName(it) }),
+      );
+    }
+  }
+
+  /** Riordino della pila: modifica del setup, non un'azione di gioco. */
+  function reorderStack(it: StackItem, index: number) {
+    const from = g.stack.findIndex((x) => x.uid === it.uid);
+    const to = Math.max(0, Math.min(index, g.stack.length - 1));
+    if (from < 0 || from === to) return;
+    const stack = [...g.stack];
+    stack.splice(from, 1);
+    stack.splice(to, 0, it);
+    commit({ ...g, stack }, tr('logReorder', { card: itemName(it), n: String(to + 1) }));
+  }
+
+  /** Un oggetto in pila trascinato in un'altra zona. Abilità e copie cessano di esistere. */
+  function stackTo(it: StackItem, dest: 'battlefield' | 'graveyard' | 'exile', controller?: PlayerId) {
+    const wasResolving = g.resolving === it.uid;
+    const after = (game: Game): Game =>
+      wasResolving ? { ...game, resolving: null, priority: g.active, passed: [] } : game;
+    if (it.kind !== 'spell' || it.copy) {
+      commit(after({ ...g, stack: g.stack.filter((x) => x.uid !== it.uid) }), tr('logCease', { card: itemName(it) }));
+      return;
+    }
+    const { game } = relocate(g, { kind: 'stack', item: it }, dest, controller);
+    commit(after(game), tr('logMove', { card: itemName(it), where: whereLabel(dest, controller ?? it.owner) }));
+  }
+
+  /** Rilascio di una carta trascinata su una destinazione (data-drop). */
+  function performDrop(item: DragItem, target: string) {
+    const [kind, arg] = target.split(':');
+    if (item.kind === 'obj') {
+      const o = g.objs.find((x) => x.uid === item.uid);
+      if (!o) return;
+      if (kind === 'bf') {
+        const p = arg as PlayerId;
+        if (o.zone !== 'battlefield') moveObj(o, 'battlefield', p);
+        else if (o.controller !== p) giveControl({ obj: o }, p);
+      } else if (kind === 'gy' && o.zone !== 'graveyard') moveObj(o, 'graveyard');
+      else if (kind === 'exile' && o.zone !== 'exile') moveObj(o, 'exile');
+      else if (kind === 'stack' || kind === 'stackpos') moveObj(o, 'stack');
+    } else {
+      const it = g.stack.find((x) => x.uid === item.uid);
+      if (!it) return;
+      if (kind === 'stackpos') reorderStack(it, Number(arg));
+      else if (kind === 'stack') reorderStack(it, g.stack.length - 1);
+      else if (kind === 'bf') stackTo(it, 'battlefield', arg as PlayerId);
+      else if (kind === 'gy') stackTo(it, 'graveyard');
+      else if (kind === 'exile') stackTo(it, 'exile');
+    }
+  }
+
   function removeFromStack(it: StackItem) {
     const wasResolving = g.resolving === it.uid;
     commit(
@@ -435,6 +530,8 @@ export function App() {
       },
       tr(had ? 'logUntarget' : 'logTarget', { card: src.card.printedName, target: labelOf(key) }),
     );
+    // bersaglio scelto: la modalità bersaglio si chiude da sola
+    setTargeting(null);
   }
   function onTargetButton(item: StackItem) {
     if (targeting === item.uid || item.targets.length > 0) {
@@ -484,7 +581,9 @@ export function App() {
   const objProps = (key: string, extraClass: string) => ({
     'data-obj': key,
     class: `${extraClass}${canTarget(key) ? ' can-target' : ''}`,
-    onClick: () => onObjectTap(key),
+    onClick: () => {
+      if (!justDropped.current) onObjectTap(key);
+    },
   });
 
   // ---- Pannelli (esilio, cimiteri): non fanno parte dello storico ----
@@ -527,8 +626,16 @@ export function App() {
       key={o.uid}
       {...objProps(objKey.of(o), `${cls}${o.tapped && o.zone === 'battlefield' ? ' tapped' : ''}`)}
       style={{ '--pc': PLAYER_COLOR[o.owner] }}
+      onPointerDown={(e) => startDrag(e, { kind: 'obj', uid: o.uid, img: o.card.image })}
     >
-      {o.card.image ? <img src={o.card.image} alt={o.card.printedName} /> : <span class="no-img">{o.card.printedName}</span>}
+      {o.card.image ? (
+        <img src={o.card.image} alt={o.card.printedName} draggable={false} />
+      ) : (
+        <span class="no-img">{o.card.printedName}</span>
+      )}
+      <button type="button" class="eye" aria-label={`${t('viewCard')}: ${o.card.printedName}`} onClick={(e) => { e.stopPropagation(); setViewer(o.card); }}>
+        <Icon d={EYE} size={14} />
+      </button>
       {o.token && <span class="token-tag">{t('token')}</span>}
       {o.prepared && o.zone === 'battlefield' && <span class="prep-tag">{t('prepared')}</span>}
       {cls === 'tile' && <span class="owner-tag">{o.owner}</span>}
@@ -541,15 +648,71 @@ export function App() {
   // Storico: tutti i messaggi, il più recente in alto; quelli "futuri" (dopo pos) appaiono attenuati
   const entries = timeline.flatMap((s, i) => s.messages.map((text, j) => ({ i, j, text, time: s.time })));
   const currentMessage = timeline[pos].messages[timeline[pos].messages.length - 1] ?? '';
-  // Una riga del tavolo si riduce quando tutti i suoi campi di battaglia sono chiusi
-  const rows: PlayerId[][] = g.players.length === 2 ? [['A'], ['B']] : [['A', 'B'], ['C', 'D']];
-  const sizes = rows
-    .map((r) => {
-      const present = r.filter((p) => g.players.includes(p));
-      return present.length > 0 && present.every((p) => collapsed.includes(p)) ? 'auto' : 'minmax(0, 1fr)';
-    })
-  // se tutto è chiuso, l'ultima riga prende lo spazio restante (la pila resta alta)
-  const rowSizes = sizes.every((x) => x === 'auto') ? [...sizes.slice(0, -1), 'minmax(0, 1fr)'].join(' ') : sizes.join(' ');
+  /** Zona di un giocatore: intestazione (chiudi, nome, cimitero), priorità, campo di battaglia. */
+  const renderZone = (id: PlayerId) => {
+          const mine = g.objs.filter((o) => o.zone === 'battlefield' && o.controller === id);
+          const gy = graveyard(id);
+          const hasPrio = g.priority === id;
+          const isCollapsed = collapsed.includes(id);
+          return (
+            <section
+              key={id}
+              class={`zone${hasPrio ? ' has-priority' : ''}${isCollapsed ? ' collapsed' : ''}${drag?.over === `bf:${id}` ? ' drop-over' : ''}`}
+              data-drop={`bf:${id}`}
+              style={{ '--pc': PLAYER_COLOR[id] }}
+            >
+              <div class="zone-head">
+                <button
+                  type="button"
+                  class="collapse"
+                  aria-expanded={!isCollapsed}
+                  aria-label={tr(isCollapsed ? 'expand' : 'collapse', { p: id })}
+                  onClick={() => setCollapsed((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
+                >
+                  <Icon d={chevron(!isCollapsed)} size={16} />
+                </button>
+                <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
+                  {t('player')} {id}
+                </button>
+                <button
+                  type="button"
+                  class={`gy${panels.includes(`gy:${id}`) ? ' on' : ''}${drag?.over === `gy:${id}` ? ' drop-over' : ''}`}
+                  data-obj={`gy:${id}`}
+                  data-drop={`gy:${id}`}
+                  aria-pressed={panels.includes(`gy:${id}`)}
+                  aria-label={`${tr('graveyardOf', { p: id })}: ${gy.length}`}
+                  title={tr('graveyardOf', { p: id })}
+                  onClick={() => togglePanel(`gy:${id}`)}
+                >
+                  {gy.length > 0 ? <img src={gy[gy.length - 1].card.image} alt="" /> : <span class="gy-empty" />}
+                  <span class="gy-count">{gy.length}</span>
+                </button>
+              </div>
+              {hasPrio && (
+                <div class="prio-strip">
+                  <span class="prio-arrow" aria-hidden="true">
+                    ▶
+                  </span>
+                  {t('hasPriority')}
+                </div>
+              )}
+              {!isCollapsed && (
+              <div class="field">
+                {mine.length === 0 && <p class="status">{t('battlefieldEmpty')}</p>}
+                {mine.map((o) => renderTile(o, 'perm'))}
+              </div>
+              )}
+            </section>
+          );
+  };
+
+  // Posizioni: 2 giocatori A sopra, B sotto; 3: A alto-sx, B alto-dx, C basso-sx; 4: A alto-sx, B alto-dx, C basso-dx, D basso-sx
+  const columns: PlayerId[][] =
+    g.players.length === 2
+      ? [['A', 'B'], []]
+      : g.players.length === 3
+        ? [['A', 'C'], ['B']]
+        : [['A', 'D'], ['B', 'C']];
   const menuObj = menu ? g.objs.find((o) => o.uid === menu.uid) : undefined;
 
   return (
@@ -586,8 +749,9 @@ export function App() {
         {targeting !== null ? <p class="hint">{t('targetingHint')}</p> : <CardSearch onPick={setPreview} />}
         <button
           type="button"
-          class={`exile-btn${panels.includes('exile') ? ' on' : ''}`}
+          class={`exile-btn${panels.includes('exile') ? ' on' : ''}${drag?.over === 'exile' ? ' drop-over' : ''}`}
           data-obj="exile"
+          data-drop="exile"
           aria-pressed={panels.includes('exile')}
           aria-label={`${t('exile')}: ${exile.length}`}
           title={t('exile')}
@@ -605,7 +769,12 @@ export function App() {
             const owner = (isExile ? null : id.slice(3)) as PlayerId | null;
             const cards = isExile ? exile : graveyard(owner!);
             return (
-              <section key={id} class="panel" style={{ '--pc': owner ? PLAYER_COLOR[owner] : '#9aa3b5' }}>
+              <section
+                key={id}
+                class={`panel${drag?.over === id ? ' drop-over' : ''}`}
+                data-drop={id}
+                style={{ '--pc': owner ? PLAYER_COLOR[owner] : '#9aa3b5' }}
+              >
                 <div class="panel-head">
                   {isExile ? <Portal size={16} /> : <span class="panel-dot" />}
                   <span class="panel-title">
@@ -624,67 +793,15 @@ export function App() {
         </div>
       )}
 
-      <div class={`table ${g.players.length === 2 ? 'two' : 'multi'}`} style={{ gridTemplateRows: rowSizes }}>
-        {g.players.map((id) => {
-          const mine = g.objs.filter((o) => o.zone === 'battlefield' && o.controller === id);
-          const gy = graveyard(id);
-          const hasPrio = g.priority === id;
-          const isCollapsed = collapsed.includes(id);
-          return (
-            <section
-              key={id}
-              class={`zone${hasPrio ? ' has-priority' : ''}${isCollapsed ? ' collapsed' : ''}`}
-              style={{ gridArea: id, '--pc': PLAYER_COLOR[id] }}
-            >
-              <div class="zone-head">
-                <button
-                  type="button"
-                  class="collapse"
-                  aria-expanded={!isCollapsed}
-                  aria-label={tr(isCollapsed ? 'expand' : 'collapse', { p: id })}
-                  onClick={() => setCollapsed((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
-                >
-                  <Icon d={chevron(!isCollapsed)} size={16} />
-                </button>
-                <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
-                  {t('player')} {id}
-                </button>
-                <button
-                  type="button"
-                  class={`gy${panels.includes(`gy:${id}`) ? ' on' : ''}`}
-                  data-obj={`gy:${id}`}
-                  aria-pressed={panels.includes(`gy:${id}`)}
-                  aria-label={`${tr('graveyardOf', { p: id })}: ${gy.length}`}
-                  title={tr('graveyardOf', { p: id })}
-                  onClick={() => togglePanel(`gy:${id}`)}
-                >
-                  {gy.length > 0 ? <img src={gy[gy.length - 1].card.image} alt="" /> : <span class="gy-empty" />}
-                  <span class="gy-count">{gy.length}</span>
-                </button>
-              </div>
-              {hasPrio && (
-                <div class="prio-strip">
-                  <span class="prio-arrow" aria-hidden="true">
-                    ▶
-                  </span>
-                  {t('hasPriority')}
-                </div>
-              )}
-              {!isCollapsed && (
-              <div class="field">
-                {mine.length === 0 && <p class="status">{t('battlefieldEmpty')}</p>}
-                {mine.map((o) => renderTile(o, 'perm'))}
-              </div>
-              )}
-            </section>
-          );
-        })}
+      <div class={`table ${g.players.length === 2 ? 'two' : 'multi'}`}>
+        {columns[0].length > 0 && <div class="col">{columns[0].map(renderZone)}</div>}
 
-        <section class="stack-col" ref={stackCol}>
+        <section class={`stack-col${drag?.over === 'stack' ? ' drop-over' : ''}`} ref={stackCol} data-drop="stack">
           <div
             class={`priority${g.priority === null ? ' nobody' : ''}`}
             style={{ '--pc': g.priority ? PLAYER_COLOR[g.priority] : '' }}
           >
+            <div class="turn-row">
             <label class="turn">
               {t('turn')}
               <select
@@ -702,6 +819,11 @@ export function App() {
             <label class="help-toggle">
               <input type="checkbox" checked={help} onChange={(e) => toggleHelp((e.target as HTMLInputElement).checked)} />
               {t('help')}
+            </label>
+            </div>
+            <label class="help-toggle" title={t('strictHelp')}>
+              <input type="checkbox" checked={strict} onChange={(e) => toggleStrict((e.target as HTMLInputElement).checked)} />
+              {t('strict')}
             </label>
             {resolvingItem ? (
               <>
@@ -752,7 +874,9 @@ export function App() {
                       `pile-card${isTop ? ' is-top' : ''}${isSource ? ' is-source' : ''}${isResolving ? ' is-resolving' : ''}`,
                     )}
                     data-anchor="strip"
+                    data-drop={`stackpos:${i}`}
                     style={{ zIndex: i + 1, '--pc': PLAYER_COLOR[it.controller] }}
+                    onPointerDown={(e) => startDrag(e, { kind: 'stack', uid: it.uid, img: it.card.image })}
                   >
                     {it.kind !== 'spell' ? (
                       <div class={`ability ${it.kind}`}>
@@ -766,11 +890,22 @@ export function App() {
                         <p class="ability-text">{it.text ?? '—'}</p>
                       </div>
                     ) : (chosenFace(it.card, it.choices, it.copy)?.image ?? it.card.image) ? (
-                      <img src={chosenFace(it.card, it.choices, it.copy)?.image ?? it.card.image} alt={itemName(it)} />
+                      <img src={chosenFace(it.card, it.choices, it.copy)?.image ?? it.card.image} alt={itemName(it)} draggable={false} />
                     ) : (
                       <div class="no-image">{it.card.printedName}</div>
                     )}
                     <span class="ctrl">{it.controller}</span>
+                    <button
+                      type="button"
+                      class="eye"
+                      aria-label={`${t('viewCard')}: ${itemName(it)}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewer(it.card);
+                      }}
+                    >
+                      <Icon d={EYE} size={16} />
+                    </button>
                     {(it.copy || it.choices) && (
                       <div class="choice-chips">
                         {it.copy && <span class="chip-copy">{t('copyTag')}</span>}
@@ -827,6 +962,8 @@ export function App() {
           )}
           <footer class="credits">{t('credits')}</footer>
         </section>
+
+        {columns[1].length > 0 && <div class="col">{columns[1].map(renderZone)}</div>}
       </div>
 
       {/* ---- Storico: indietro / avanti tra le condizioni ---- */}
@@ -924,6 +1061,31 @@ export function App() {
                 ))}
               </div>
             )}
+            {menuObj.zone === 'battlefield' && g.players.length > 1 && (
+              <div class="menu-control">
+                <span>
+                  <Icon d={CONTROL} size={16} /> {t('giveControl')}
+                </span>
+                <div class="menu-chips">
+                  {g.players
+                    .filter((p) => p !== menuObj.controller)
+                    .map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        role="menuitem"
+                        style={{ '--pc': PLAYER_COLOR[p] }}
+                        onClick={() => {
+                          giveControl({ obj: menuObj }, p);
+                          setMenu(null);
+                        }}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
             {menuObj.zone === 'battlefield' && menuObj.card.layout === 'prepare' && (
               <>
                 <hr />
@@ -962,6 +1124,7 @@ export function App() {
               disabled={g.resolving !== null}
               onClick={() => {
                 const c = menuObj.zone === 'battlefield' ? menuObj.controller : menuObj.owner;
+                if (!guard(c)) return setMenu(null);
                 setAbilityPick({ card: menuObj.card, kind: 'activated', controller: c });
                 setMenu(null);
               }}
@@ -1014,11 +1177,22 @@ export function App() {
           key={choicesFor}
           item={g.stack.find((x) => x.uid === choicesFor)!}
           onSave={(ch) => saveChoices(choicesFor, ch)}
+          players={g.players}
+          onControl={(p) => giveControl({ item: g.stack.find((x) => x.uid === choicesFor) }, p)}
           onClose={() => setChoicesFor(null)}
         />
       )}
 
       {help && <Help onClose={() => toggleHelp(false)} />}
+
+      {viewer && <CardViewer card={viewer} onClose={() => setViewer(null)} />}
+
+      {/* Carta trascinata: segue il dito */}
+      {drag && (
+        <div class="drag-ghost" style={{ left: `${drag.x}px`, top: `${drag.y}px` }} aria-hidden="true">
+          {drag.item.img ? <img src={drag.item.img} alt="" /> : <span />}
+        </div>
+      )}
 
       {/* ---- Condivisione del setup ---- */}
       {share && (
@@ -1065,7 +1239,7 @@ export function App() {
                     type="button"
                     class="chip"
                     style={{ '--pc': PLAYER_COLOR[p] }}
-                    disabled={g.resolving !== null}
+                    disabled={g.resolving !== null || !mayAct(p)}
                     onClick={() => cast(p)}
                   >
                     {p}
@@ -1088,7 +1262,7 @@ export function App() {
                     type="button"
                     class="chip outline small"
                     style={{ '--pc': PLAYER_COLOR[p] }}
-                    disabled={g.resolving !== null}
+                    disabled={g.resolving !== null || !mayAct(p)}
                     onClick={() => setAbilityPick({ card: preview, kind: 'activated', controller: p })}
                   >
                     <Icon d={ACTIVATE} size={14} /> {p}

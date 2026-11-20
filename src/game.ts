@@ -114,12 +114,18 @@ export type Source = { kind: 'obj'; obj: CardObj } | { kind: 'stack'; item: Stac
  * i bersagli che la puntavano diventano illegali, e le loro frecce puntano alla nuova posizione.
  * Un token che lascia il campo di battaglia cessa di esistere (CR 111.7, 704.5d).
  */
-export function relocate(g: Game, src: Source, dest: Destination): { game: Game; tokenGone: boolean } {
+export function relocate(
+  g: Game,
+  src: Source,
+  dest: Destination,
+  controllerOverride?: PlayerId,
+): { game: Game; tokenGone: boolean } {
   const card = src.kind === 'obj' ? src.obj.card : src.item.card;
   const owner = src.kind === 'obj' ? src.obj.owner : src.item.owner;
   // Chi controllerà la carta nella nuova zona: dalla pila o dal campo resta il controllore, altrimenti il proprietario
   const controller =
-    src.kind === 'stack' ? src.item.controller : src.obj.zone === 'battlefield' ? src.obj.controller : owner;
+    controllerOverride ??
+    (src.kind === 'stack' ? src.item.controller : src.obj.zone === 'battlefield' ? src.obj.controller : owner);
   const oldKey = src.kind === 'stack' ? objKey.stack(src.item.uid) : objKey.of(src.obj);
   const isToken = src.kind === 'obj' && !!src.obj.token;
 

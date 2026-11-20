@@ -207,3 +207,19 @@ export async function fetchByIds(ids: string[]): Promise<Map<string, Card>> {
   }
   return out;
 }
+
+export interface Ruling {
+  source: string;
+  published_at: string;
+  comment: string;
+}
+const rulingsCache = new Map<string, Ruling[]>();
+/** Chiarimenti ufficiali (rulings) di una carta, in inglese. */
+export async function fetchRulings(scryfallId: string): Promise<Ruling[]> {
+  const hit = rulingsCache.get(scryfallId);
+  if (hit) return hit;
+  const r = await get<{ data: Ruling[] }>(`/cards/${scryfallId}/rulings`);
+  const data = r?.data ?? [];
+  rulingsCache.set(scryfallId, data);
+  return data;
+}

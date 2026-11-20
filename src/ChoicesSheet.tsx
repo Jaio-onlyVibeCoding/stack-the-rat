@@ -8,7 +8,7 @@ import {
   parseModes,
   type Choices,
 } from './choices';
-import type { StackItem } from './game';
+import { PLAYER_COLOR, type PlayerId, type StackItem } from './game';
 import { useI18n } from './i18n';
 
 /** Scheda delle scelte di un oggetto in pila (CR 601.2b–d): faccia, X, modalità, costi, altro. */
@@ -16,10 +16,15 @@ export function ChoicesSheet({
   item,
   onSave,
   onClose,
+  players,
+  onControl,
 }: {
   item: StackItem;
   onSave: (ch: Choices) => void;
   onClose: () => void;
+  players: PlayerId[];
+  /** cambia il controllore dell'oggetto in pila (es. Commandeer) */
+  onControl: (p: PlayerId) => void;
 }) {
   const { t } = useI18n();
   const [ch, setCh] = useState<Choices>(item.choices ?? {});
@@ -62,6 +67,24 @@ export function ChoicesSheet({
     <div class="sheet-backdrop" onClick={onClose}>
       <section class="sheet choices-sheet" onClick={(e) => e.stopPropagation()}>
         <h2>{t('choicesTitle').replace('{card}', card.printedName)}</h2>
+
+        <fieldset>
+          <legend>{t('controller')}</legend>
+          <div class="chips">
+            {players.map((p) => (
+              <button
+                key={p}
+                type="button"
+                class={`chip small${p === item.controller ? '' : ' outline'}`}
+                style={{ '--pc': PLAYER_COLOR[p] }}
+                aria-pressed={p === item.controller}
+                onClick={() => p !== item.controller && onControl(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </fieldset>
 
         {faceSelectable && (
           <fieldset>
