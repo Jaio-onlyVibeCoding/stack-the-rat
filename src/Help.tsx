@@ -1,10 +1,27 @@
-import { useI18n } from './i18n';
+import { useState } from 'preact/hooks';
+import { useI18n, type Key } from './i18n';
 
-/** Finestra di aiuto: l'ordine corretto per lanciare una magia o attivare un'abilità. */
+/** Sezione richiudibile con la freccetta ^ */
+function Section({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: any }) {
+  return (
+    <section class="help-section">
+      <button type="button" class="help-section-head" aria-expanded={open} onClick={onToggle}>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="icon">
+          <path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
+        </svg>
+        <span>{title}</span>
+      </button>
+      {open && <div class="help-section-body">{children}</div>}
+    </section>
+  );
+}
+
+/** Finestra di aiuto: lancio di magie e abilità, APNAP, combattimento, link alle regole. */
 export function Help({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
-  const cast = t('helpCastSteps').split('|');
-  const ability = t('helpAbilitySteps').split('|');
+  const [open, setOpen] = useState<Record<string, boolean>>({ cast: true, apnap: false, combat: false });
+  const toggle = (k: string) => setOpen({ ...open, [k]: !open[k] });
+  const steps = (k: Key) => t(k).split('|');
   const letters = 'abcdefghi';
   return (
     <aside class="help-window" role="dialog" aria-label={t('helpTitle')}>
@@ -15,22 +32,38 @@ export function Help({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       <div class="help-body">
-        <h3>{t('helpCast')}</h3>
-        <ol>
-          {cast.map((step, i) => (
-            <li key={i}>
-              <span class="rule">601.2{letters[i]}</span> {step}
-            </li>
-          ))}
-        </ol>
-        <h3>{t('helpAbility')}</h3>
-        <ol>
-          {ability.map((step, i) => (
-            <li key={i}>{step}</li>
-          ))}
-        </ol>
-        <p>{t('helpTrigger')}</p>
-        <p>{t('helpPriority')}</p>
+        <Section title={`${t('helpCast')} · ${t('helpAbility')}`} open={open.cast} onToggle={() => toggle('cast')}>
+          <h3>{t('helpCast')}</h3>
+          <ol>
+            {steps('helpCastSteps').map((step, i) => (
+              <li key={i}>
+                <span class="rule">601.2{letters[i]}</span> {step}
+              </li>
+            ))}
+          </ol>
+          <h3>{t('helpAbility')}</h3>
+          <ol>
+            {steps('helpAbilitySteps').map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          <p>{t('helpTrigger')}</p>
+          <p>{t('helpPriority')}</p>
+        </Section>
+        <Section title={t('helpApnap')} open={open.apnap} onToggle={() => toggle('apnap')}>
+          <ol>
+            {steps('helpApnapSteps').map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+        </Section>
+        <Section title={t('helpCombat')} open={open.combat} onToggle={() => toggle('combat')}>
+          <ol>
+            {steps('helpCombatSteps').map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+        </Section>
         <h3>{t('rulesLinks')}</h3>
         <ul class="help-links">
           <li>

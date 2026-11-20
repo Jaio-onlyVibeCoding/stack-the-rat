@@ -77,6 +77,8 @@ export interface Card {
   keywords: string[];
   /** Pagina della carta su scryfall.com */
   scryfallUri: string;
+  /** Tipo inglese (Oracle) del fronte */
+  oracleType: string;
 }
 
 const PERMANENT_TYPES = /\b(Creature|Artifact|Enchantment|Planeswalker|Land|Battle)\b/;
@@ -115,6 +117,7 @@ export function toCard(r: RawCard): Card {
     faces,
     keywords: r.keywords ?? [],
     scryfallUri: r.scryfall_uri,
+    oracleType: f?.type_line ?? r.type_line ?? '',
   };
 }
 

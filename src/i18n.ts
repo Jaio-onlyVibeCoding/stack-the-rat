@@ -85,6 +85,20 @@ const en = {
   sharedLoaded: 'Shared setup loaded.',
   sharedError: 'This shared link is not valid.',
   token: 'Token',
+  copyAskTitle: 'Copy of {card}',
+  copyAskText: 'The original has targets. CR 707.10: the copy keeps the same targets, unless the effect that creates it lets you choose new ones (CR 707.10c).',
+  copySame: 'Same targets',
+  copyNew: 'Choose new targets',
+  helpApnap: 'Abilities that trigger at the same time (APNAP)',
+  helpApnapSteps:
+    'APNAP = Active Player, Non-Active Player (CR 101.4).|When several abilities trigger at the same time, the active player puts all of theirs on the stack first, in the order they choose (CR 603.3b).|Then each other player, in turn order, puts theirs on the stack, in the order they choose.|Result: the last abilities put on the stack (the non-active players\' ones) resolve first.|In the app: use "Move up" / "Move down" in the ⋯ menu to order them.',
+  helpCombat: 'Combat',
+  helpCombatSteps:
+    'Beginning of combat step: players get priority (CR 507).|Declare attackers step: the active player declares attackers and taps them (unless they have vigilance); then abilities trigger and players get priority (CR 508).|Declare blockers step: the defending player declares blockers; then triggers and priority (CR 509).|Combat damage step: damage is dealt all at once and does not use the stack (CR 510.2); then priority. With first strike or double strike there are two combat damage steps (CR 510.4).|End of combat step: last chance to act in combat; "until end of combat" effects end afterwards (CR 511).',
+  firstStrikeWarn:
+    'First strike / double strike on the battlefield: check rule 510.4. If an attacking or blocking creature has it, there is an extra combat damage step: first only creatures with first strike or double strike deal damage, then the others and those with double strike.',
+  sorcerySpeed:
+    '{card} can only be cast at sorcery speed: in your main phase, with an empty stack, while you have priority (CR 307.1, 301.1, 302.1).',
   copyItem: 'Create a copy',
   duplicate: 'Duplicate',
   moveUp: 'Move up',
@@ -271,6 +285,20 @@ const it: Dict = {
   sharedLoaded: 'Setup condiviso caricato.',
   sharedError: 'Questo link condiviso non è valido.',
   token: 'Token',
+  copyAskTitle: 'Copia di {card}',
+  copyAskText: "L'originale ha dei bersagli. CR 707.10: la copia mantiene gli stessi bersagli, a meno che l'effetto che la crea permetta di sceglierne di nuovi (CR 707.10c).",
+  copySame: 'Stessi bersagli',
+  copyNew: 'Scegli nuovi bersagli',
+  helpApnap: 'Abilità che si innescano insieme (APNAP)',
+  helpApnapSteps:
+    "APNAP = giocatore attivo, giocatore non attivo (CR 101.4).|Se più abilità si innescano nello stesso momento, il giocatore attivo mette in pila per prime tutte le sue, nell'ordine che sceglie (CR 603.3b).|Poi ogni altro giocatore, in ordine di turno, mette in pila le sue, nell'ordine che sceglie.|Risultato: le ultime messe in pila (quelle dei giocatori non attivi) si risolvono per prime.|Nell'app: usa \"Sposta sopra\" / \"Sposta sotto\" nel menu ⋯ per ordinarle.",
+  helpCombat: 'Combattimento',
+  helpCombatSteps:
+    "Sottofase di inizio combattimento: i giocatori ricevono la priorità (CR 507).|Dichiarazione degli attaccanti: il giocatore attivo dichiara gli attaccanti e li TAPpa (salvo cautela); poi si innescano le abilità e i giocatori ricevono la priorità (CR 508).|Dichiarazione dei bloccanti: il giocatore in difesa dichiara i bloccanti; poi inneschi e priorità (CR 509).|Danno da combattimento: tutto il danno viene inflitto insieme e non usa la pila (CR 510.2); poi priorità. Con attacco improvviso o doppio attacco le sottofasi di danno sono due (CR 510.4).|Fine del combattimento: ultima occasione per agire in combattimento; dopo finiscono gli effetti \"fino alla fine del combattimento\" (CR 511).",
+  firstStrikeWarn:
+    "Attacco improvviso / doppio attacco sul campo: verifica la regola 510.4. Se una creatura attaccante o bloccante lo ha, c'è una sottofase di danno in più: prima infliggono danno solo le creature con attacco improvviso o doppio attacco, poi le altre e quelle con doppio attacco.",
+  sorcerySpeed:
+    '{card} si può lanciare solo a velocità stregoneria: nella tua fase principale, con la pila vuota, quando hai la priorità (CR 307.1, 301.1, 302.1).',
   copyItem: 'Crea copia',
   duplicate: 'Duplica',
   moveUp: 'Sposta sopra',
@@ -389,7 +417,7 @@ const DICTS: Record<Lang, Dict> = { en, it };
 
 const isLang = (v: unknown): v is Lang => LANGS.some((l) => l.code === v);
 
-function detect(): Lang {
+export function detect(): Lang {
   try {
     const saved = localStorage.getItem('lang');
     if (isLang(saved)) return saved;

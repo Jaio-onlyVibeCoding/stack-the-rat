@@ -21,7 +21,7 @@ import {
   type StackItem,
   type StackKind,
 } from './game';
-import { LANGS, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
+import { LANGS, detect, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
 import { getCard, type Card } from './scryfall';
 import { decodeGame, encodeGame, sharedCodeFromUrl, shareUrl } from './share';
 import { ChoicesSheet } from './ChoicesSheet';
@@ -63,6 +63,7 @@ const SPARK = 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2
 const EXTERNAL = 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5';
 const DOTS = 'M5 12h.01M12 12h.01M19 12h.01';
 const EYE = 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
+const WARN = 'M12 3l10 18H2zM12 10v5M12 18h.01';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -76,6 +77,8 @@ interface Snapshot {
 const fill = (text: string, vars: Record<string, string>) =>
   text.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? '');
 
+/** Raggruppamento delle 12 sottofasi nelle 5 fasi del turno (CR 500.1). */
+const STEP_GROUPS = [[0, 1, 2], [3], [4, 5, 6, 7, 8], [9], [10, 11]];
 const DESTINATIONS: Destination[] = ['battlefield', 'graveyard', 'exile', 'stack'];
 const HISTORY_LIMIT = 200;
 
@@ -138,13 +141,17 @@ export function App() {
   }
   /** carte di esempio (placeholder) mostrate finché non si aggiunge una carta; tornano solo con il reset */
   const [showExamples, setShowExamples] = useState(true);
-  const [examples, setExamples] = useState<{ perm?: Card; spell?: Card }>({});
+  const [examples, setExamples] = useState<{ perms: Card[]; spell?: Card }>({ perms: [] });
   useEffect(() => {
     const l = langInfo(lang).scryfall;
-    Promise.all([getCard('Thrumming Stone', l), getCard('Rat Colony', l)])
-      .then(([perm, spell]) => setExamples({ perm: perm ?? undefined, spell: spell ?? undefined }))
+    Promise.all([getCard('Thrumming Stone', l), getCard("Vanquisher's Banner", l), getCard('Rat Colony', l)])
+      .then(([stone, banner, spell]) =>
+        setExamples({ perms: [stone, banner].filter((c): c is Card => !!c), spell: spell ?? undefined }),
+      )
       .catch(() => {});
   }, [lang]);
+  /** oggetto in pila da copiare: si chiede se tenere gli stessi bersagli */
+  const [copyAsk, setCopyAsk] = useState<StackItem | null>(null);
   /** gestione di fasi e sottofasi nel passaggio di priorità */
   const [phases, setPhases] = useState(() => {
     try {
@@ -160,6 +167,9 @@ export function App() {
     } catch {}
   }
   const stepName = (i: number) => t('stepNames').split('|')[i] ?? '';
+  /** c'è una creatura con attacco improvviso o doppio attacco sul campo? (CR 510.4) */
+  const anyFirstStrike = () =>
+    g.objs.some((o) => o.zone === 'battlefield' && (o.card.keywords.includes('First strike') || o.card.keywords.includes('Double strike')));
   const phaseName = (i: number) => t('phaseNames').split('|')[i] ?? '';
 
   function resetApp() {
@@ -173,6 +183,17 @@ export function App() {
     setChoicesFor(null);
     setPreview(null);
     setShowExamples(true);
+    setViewer(null);
+    setHistoryOpen(false);
+    setCopyAsk(null);
+    // anche le impostazioni tornano a quelle iniziali
+    try {
+      ['help', 'phases', 'strict', 'lang'].forEach((k) => localStorage.removeItem(k));
+    } catch {}
+    setHelp(false);
+    setPhases(false);
+    setStrict(false);
+    setLang(detect());
   }
 
   const { drag, start: startDrag, justDropped } = useDrag((item, target) => performDrop(item, target));
@@ -288,8 +309,24 @@ export function App() {
   const needsChoices = (c: Card) =>
     canChooseFace(c) || hasX(c, null) || !!parseModes(c, null) || costKeywords(c).additional.length > 0 || costKeywords(c).alternative.length > 0;
 
+  /**
+   * Velocità stregoneria (CR 307.1, 301.1…): stregonerie e permanenti senza lampo solo nella propria
+   * fase principale, a pila vuota, con la priorità. Controllata solo con "Solo chi ha priorità" + "Fasi".
+   */
+  function sorcerySpeedOk(card: Card, p: PlayerId): boolean {
+    if (!strict || !phases) return true;
+    const slow = /\b(Sorcery|Creature|Artifact|Enchantment|Planeswalker|Battle)\b/.test(card.oracleType) && !card.keywords.includes('Flash');
+    if (!slow) return true;
+    const ok = p === g.active && (g.step === STEP.main1 || g.step === STEP.main2) && g.stack.length === 0;
+    if (!ok) {
+      setNotice(tr('sorcerySpeed', { card: card.printedName }));
+      setTimeout(() => setNotice(null), 5000);
+    }
+    return ok;
+  }
+
   function cast(controller: PlayerId) {
-    if (!preview || g.resolving !== null || !guard(controller)) return;
+    if (!preview || g.resolving !== null || !guard(controller) || !sorcerySpeedOk(preview, controller)) return;
     const uid = newUid();
     // CR 117.3c: chi lancia una magia riceve di nuovo la priorità; i passaggi precedenti non contano più
     commit(
@@ -450,12 +487,14 @@ export function App() {
   }
 
   /** Copia di un oggetto in pila: stesse scelte e bersagli (CR 707.10). Va in cima alla pila. */
-  function copyItem(it: StackItem) {
-    const copy: StackItem = { ...it, uid: newUid(), copy: true, targets: [...it.targets] };
+  function copyItem(it: StackItem, keepTargets: boolean) {
+    const copy: StackItem = { ...it, uid: newUid(), copy: true, targets: keepTargets ? [...it.targets] : [] };
     commit(
       { ...g, stack: [...g.stack, copy], passed: [] },
       tr('logCopy', { p: it.controller, card: itemName(it) }),
     );
+    // nuovi bersagli: si entra subito in modalità bersaglio per la copia
+    if (!keepTargets) setTargeting(copy.uid);
   }
   /** Duplica: come se l'oggetto venisse aggiunto di nuovo dalla barra di ricerca. */
   function duplicateItem(it: StackItem) {
@@ -797,15 +836,20 @@ export function App() {
               )}
               {!isCollapsed && (
               <div class="field">
-                {mine.length === 0 && !(showExamples && id === 'A' && examples.perm) && (
+                {mine.length === 0 && !(showExamples && id === 'A' && examples.perms.length) && (
                   <p class="status">{t('battlefieldEmpty')}</p>
                 )}
-                {showExamples && id === 'A' && examples.perm?.image && (
-                  <div class="perm example">
-                    <img src={examples.perm.image} alt={examples.perm.printedName} draggable={false} />
-                    <span class="example-tag">{t('example')}</span>
-                  </div>
-                )}
+                {showExamples &&
+                  id === 'A' &&
+                  examples.perms.map((c) => (
+                    <div key={c.scryfallId} class="perm example">
+                      <img src={c.image} alt={c.printedName} draggable={false} />
+                      <span class="example-tag">{t('example')}</span>
+                      <button type="button" class="eye" aria-label={`${t('viewCard')}: ${c.printedName}`} onClick={() => setViewer(c)}>
+                        <Icon d={EYE} size={14} />
+                      </button>
+                    </div>
+                  ))}
                 {mine.map((o) => renderTile(o, 'perm'))}
               </div>
               )}
@@ -937,17 +981,46 @@ export function App() {
             </label>
             {phases && (
               <label class="step-select">
-                <span>{phaseName(g.step)}</span>
+                <span class="step-phase">
+                  {phaseName(g.step)}
+                  {anyFirstStrike() && (
+                    <button
+                      type="button"
+                      class="warn"
+                      title={t('firstStrikeWarn')}
+                      aria-label={t('firstStrikeWarn')}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setNotice(t('firstStrikeWarn'));
+                        setTimeout(() => setNotice(null), 8000);
+                      }}
+                    >
+                      <Icon d={WARN} size={14} /> 510.4
+                    </button>
+                  )}
+                </span>
                 <select
                   value={g.step}
                   disabled={g.resolving !== null}
                   onChange={(e) => setStep(Number((e.target as HTMLSelectElement).value))}
                 >
-                  {Array.from({ length: STEP_COUNT }, (_, i) => (
-                    <option key={i} value={i}>
-                      {stepName(i)}
-                    </option>
-                  ))}
+                  {/* fasi con sottofasi raggruppate; le fasi principali non hanno sottofasi */}
+                  {STEP_GROUPS.map((grp) =>
+                    grp.length === 1 ? (
+                      <option key={grp[0]} value={grp[0]}>
+                        {stepName(grp[0])}
+                      </option>
+                    ) : (
+                      <optgroup key={grp[0]} label={phaseName(grp[0])}>
+                        {grp.map((i) => (
+                          <option key={i} value={i}>
+                            {i === STEP.damage && anyFirstStrike() ? '⚠ ' : ''}
+                            {stepName(i)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ),
+                  )}
                 </select>
               </label>
             )}
@@ -994,6 +1067,14 @@ export function App() {
                     <img src={examples.spell.image} alt={examples.spell.printedName} draggable={false} />
                     <span class="ctrl">A</span>
                     <span class="example-tag">{t('example')}</span>
+                    <button
+                      type="button"
+                      class="eye"
+                      aria-label={`${t('viewCard')}: ${examples.spell.printedName}`}
+                      onClick={() => setViewer(examples.spell!)}
+                    >
+                      <Icon d={EYE} size={16} />
+                    </button>
                   </li>
                 </ol>
               )}
@@ -1036,6 +1117,7 @@ export function App() {
                       <div class="no-image">{it.card.printedName}</div>
                     )}
                     <span class="ctrl">{it.controller}</span>
+                    {isTop && (
                     <button
                       type="button"
                       class="eye"
@@ -1047,6 +1129,7 @@ export function App() {
                     >
                       <Icon d={EYE} size={16} />
                     </button>
+                    )}
                     {(it.copy || it.choices) && (
                       <div class="choice-chips">
                         {it.copy && <span class="chip-copy">{t('copyTag')}</span>}
@@ -1058,6 +1141,19 @@ export function App() {
                     )}
                     {isTop && <span class="badge">{isResolving ? t('resolvingTag') : t('top')}</span>}
                     <div class="card-tools">
+                      {!isTop && (
+                        <button
+                          type="button"
+                          class="eye-tool"
+                          aria-label={`${t('viewCard')}: ${itemName(it)}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewer(it.card);
+                          }}
+                        >
+                          <Icon d={EYE} size={18} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         class="more-stack"
@@ -1322,7 +1418,10 @@ export function App() {
           onCopy={() => {
             const it = g.stack.find((x) => x.uid === choicesFor);
             setChoicesFor(null);
-            if (it) copyItem(it);
+            if (it) {
+              if (it.targets.length) setCopyAsk(it);
+              else copyItem(it, true);
+            }
           }}
           onDuplicate={() => {
             const it = g.stack.find((x) => x.uid === choicesFor);
@@ -1339,6 +1438,40 @@ export function App() {
           onControl={(p) => giveControl({ item: g.stack.find((x) => x.uid === choicesFor) }, p)}
           onClose={() => setChoicesFor(null)}
         />
+      )}
+
+      {copyAsk && (
+        <div class="sheet-backdrop" onClick={() => setCopyAsk(null)}>
+          <section class="sheet choices-sheet" onClick={(e) => e.stopPropagation()}>
+            <h2>{tr('copyAskTitle', { card: itemName(copyAsk) })}</h2>
+            <p class="status">{t('copyAskText')}</p>
+            <div class="actions">
+              <button
+                type="button"
+                class="primary"
+                onClick={() => {
+                  copyItem(copyAsk, true);
+                  setCopyAsk(null);
+                }}
+              >
+                {t('copySame')}
+              </button>
+              <button
+                type="button"
+                class="secondary"
+                onClick={() => {
+                  copyItem(copyAsk, false);
+                  setCopyAsk(null);
+                }}
+              >
+                {t('copyNew')}
+              </button>
+              <button type="button" class="secondary" onClick={() => setCopyAsk(null)}>
+                {t('cancel')}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {help && <Help onClose={() => toggleHelp(false)} />}

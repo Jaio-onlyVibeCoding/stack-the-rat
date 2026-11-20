@@ -71,7 +71,7 @@ export interface Game {
 
 /** 12 momenti del turno (CR 500): STAP, mantenimento, acquisizione, principale 1, 5 di combattimento, principale 2, finale, cancellazione. */
 export const STEP_COUNT = 12;
-export const STEP = { untap: 0, upkeep: 1, main1: 3, cleanup: 11 };
+export const STEP = { untap: 0, upkeep: 1, main1: 3, damage: 7, main2: 9, cleanup: 11 };
 
 export const initialGame = (): Game => ({
   players: ['A', 'B'],
