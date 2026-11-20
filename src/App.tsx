@@ -158,6 +158,37 @@ export function App() {
   const pinch = useRef<{ id: PlayerId; d0: number; z0: number } | null>(null);
   const touchDist = (e: TouchEvent) =>
     Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  // Pizzico con due dita sul campo di battaglia (ascoltatori nativi: funzionano su ogni browser)
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  useEffect(() => {
+    const start = (e: TouchEvent) => {
+      const el = (e.target as Element).closest<HTMLElement>('[data-zoom]');
+      if (el && e.touches.length === 2) {
+        const id = el.dataset.zoom as PlayerId;
+        pinch.current = { id, d0: touchDist(e), z0: zoomRef.current[id] ?? 1 };
+      }
+    };
+    const move = (e: TouchEvent) => {
+      const p = pinch.current;
+      if (!p || e.touches.length !== 2) return;
+      e.preventDefault();
+      setZoomOf(p.id, (p.z0 * touchDist(e)) / p.d0);
+    };
+    const end = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch.current = null;
+    };
+    document.addEventListener('touchstart', start, { passive: true });
+    document.addEventListener('touchmove', move, { passive: false });
+    document.addEventListener('touchend', end);
+    document.addEventListener('touchcancel', end);
+    return () => {
+      document.removeEventListener('touchstart', start);
+      document.removeEventListener('touchmove', move);
+      document.removeEventListener('touchend', end);
+      document.removeEventListener('touchcancel', end);
+    };
+  }, []);
   /** colonna della pila larga il doppio */
   const [wideStack, setWideStack] = useState(false);
   const [isFull, setIsFull] = useState(false);
@@ -885,19 +916,7 @@ export function App() {
               <div
                 class="field"
                 style={{ '--zoom': zoomOf(id) }}
-                onTouchStart={(e) => {
-                  if (e.touches.length === 2) pinch.current = { id, d0: touchDist(e), z0: zoomOf(id) };
-                }}
-                onTouchMove={(e) => {
-                  const p = pinch.current;
-                  if (p && p.id === id && e.touches.length === 2) {
-                    e.preventDefault();
-                    setZoomOf(id, (p.z0 * touchDist(e)) / p.d0);
-                  }
-                }}
-                onTouchEnd={(e) => {
-                  if (e.touches.length < 2) pinch.current = null;
-                }}
+                data-zoom={id}
               >
                 {mine.length === 0 && !(showExamples && id === 'A' && examples.perms.length) && (
                   <p class="status">{t('battlefieldEmpty')}</p>
