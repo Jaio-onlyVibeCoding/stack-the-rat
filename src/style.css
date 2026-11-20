@@ -693,3 +693,13 @@ input { width: 100%; }
 /* menu sottofasi: scorre con il dito */
 .step-menu { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 .menu { overflow-y: auto; overscroll-behavior: contain; max-height: calc(100dvh - 16px); }
+
+/* ---------- Zone del giocatore: grimorio, mano, cimitero ---------- */
+.zone-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 0 5px;
+  border: 0; background: none; color: #15120c; cursor: pointer; font-size: 12px; font-weight: 700;
+}
+.zone-btn.on { background: #0003; }
+.zone-btn .icon { stroke-width: 2.2; }
+.zone-head .player-tag { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.panel-title small { color: var(--muted); font-weight: 400; }

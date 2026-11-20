@@ -72,6 +72,10 @@ const NARROW = 'M4 7l5 5-5 5M20 7l-5 5 5 5';
 const SEARCH = 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4';
 const KEBAB = 'M12 5h.01M12 12h.01M12 19h.01';
 const GEAR = 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4';
+const LIBRARY = 'M8 3h10a1 1 0 0 1 1 1v13M6 6h10a1 1 0 0 1 1 1v13H5V7a1 1 0 0 1 1-1z';
+const HAND =
+  'M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4.5a1.5 1.5 0 0 1 3 0V12M14 12V5.5a1.5 1.5 0 0 1 3 0V13M17 13V9.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1a6 6 0 0 1-5.2-3L4.2 15a1.5 1.5 0 0 1 2.6-1.5L8 15.5';
+const TOMBSTONE = 'M6 21V10a6 6 0 0 1 12 0v11zM4 21h16M12 9v6M9.5 11.5h5';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -87,7 +91,7 @@ const fill = (text: string, vars: Record<string, string>) =>
 
 /** Raggruppamento delle 12 sottofasi nelle 5 fasi del turno (CR 500.1). */
 const STEP_GROUPS = [[0, 1, 2], [3], [4, 5, 6, 7, 8], [9], [10, 11]];
-const DESTINATIONS: Destination[] = ['battlefield', 'graveyard', 'exile', 'stack'];
+const DESTINATIONS: Destination[] = ['battlefield', 'hand', 'library', 'libraryBottom', 'graveyard', 'exile', 'stack'];
 const HISTORY_LIMIT = 200;
 
 export function App() {
@@ -316,6 +320,8 @@ export function App() {
   const resolvingItem = g.stack.find((s) => s.uid === g.resolving) ?? null;
   const nextPlayer = (p: PlayerId) => g.players[(g.players.indexOf(p) + 1) % g.players.length];
   const graveyard = (p: PlayerId) => g.objs.filter((o) => o.zone === 'graveyard' && o.owner === p);
+  const library = (p: PlayerId) => g.objs.filter((o) => o.zone === 'library' && o.owner === p);
+  const hand = (p: PlayerId) => g.objs.filter((o) => o.zone === 'hand' && o.owner === p);
   const exile = g.objs.filter((o) => o.zone === 'exile');
 
   function labelOf(key: string): string {
@@ -329,6 +335,9 @@ export function App() {
     if (dest === 'battlefield') return tr('battlefieldOf', { p });
     if (dest === 'graveyard') return tr('graveyardOf', { p });
     if (dest === 'exile') return t('exileZone');
+    if (dest === 'hand') return tr('handOf', { p });
+    if (dest === 'library') return tr('libraryTopOf', { p });
+    if (dest === 'libraryBottom') return tr('libraryBottomOf', { p });
     return t('stackZone');
   }
   /** Con "Solo chi ha priorità" attivo, solo quel giocatore può lanciare/attivare/mettere in pila. */
@@ -340,7 +349,15 @@ export function App() {
     return false;
   }
   const destName = (d: Destination) =>
-    d === 'battlefield' ? t('battlefield') : d === 'graveyard' ? t('graveyard') : d === 'exile' ? t('exile') : t('stack');
+    ({
+      battlefield: t('battlefield'),
+      graveyard: t('graveyard'),
+      exile: t('exile'),
+      stack: t('stack'),
+      hand: t('hand'),
+      library: t('libraryTop'),
+      libraryBottom: t('libraryBottom'),
+    })[d];
 
   // ---- Giocatori ----
   function addPlayer() {
@@ -438,10 +455,9 @@ export function App() {
     const permanent = face ? face.isPermanent : it.card.isPermanent;
     const dest = leaveDestination(it, resolved, permanent);
     const msgs: string[] = resolved ? [] : [tr('notResolved', { card })];
-    if (dest === 'cease' || dest === 'hand') {
+    if (dest === 'cease') {
       const game = { ...base, stack: base.stack.filter((x) => x.uid !== it.uid) };
-      if (dest === 'hand') msgs.push(tr('logToHand', { card }));
-      else if (it.kind !== 'spell') msgs.push(resolved ? tr('abilityResolved', { card }) : tr('logCease', { card }));
+      if (it.kind !== 'spell') msgs.push(resolved ? tr('abilityResolved', { card }) : tr('logCease', { card }));
       else msgs.push(tr('logCease', { card }));
       return { game, msgs };
     }
@@ -452,8 +468,11 @@ export function App() {
         : it;
     const { game } = relocate(base, { kind: 'stack', item }, dest);
     if (dest === 'battlefield') msgs.push(tr('resolvedPermanent', { card }));
+    else if (dest === 'hand') msgs.push(tr('logToHand', { card }));
     else if (dest === 'graveyard') msgs.push(resolved ? tr('resolved', { card }) : tr('goesGraveyard', { card }));
-    else msgs.push(resolved && it.card.layout === 'adventure' && it.choices?.face === 1 ? tr('logAdventure', { card }) : tr('logFlashbackExile', { card }));
+    else if (dest === 'exile')
+      msgs.push(resolved && it.card.layout === 'adventure' && it.choices?.face === 1 ? tr('logAdventure', { card }) : tr('logFlashbackExile', { card }));
+    else msgs.push(tr('logMove', { card, where: whereLabel(dest, it.owner) }));
     return { game, msgs };
   }
 
@@ -586,7 +605,7 @@ export function App() {
   }
 
   /** Un oggetto in pila trascinato in un'altra zona. Abilità e copie cessano di esistere. */
-  function stackTo(it: StackItem, dest: 'battlefield' | 'graveyard' | 'exile', controller?: PlayerId) {
+  function stackTo(it: StackItem, dest: Exclude<Destination, 'stack'>, controller?: PlayerId) {
     const wasResolving = g.resolving === it.uid;
     const after = (game: Game): Game =>
       wasResolving ? { ...game, resolving: null, priority: g.active, passed: [] } : game;
@@ -609,6 +628,8 @@ export function App() {
         if (o.zone !== 'battlefield') moveObj(o, 'battlefield', p);
         else if (o.controller !== p) giveControl({ obj: o }, p);
       } else if (kind === 'gy' && o.zone !== 'graveyard') moveObj(o, 'graveyard');
+      else if (kind === 'lib' && o.zone !== 'library') moveObj(o, 'library');
+      else if (kind === 'hand' && o.zone !== 'hand') moveObj(o, 'hand');
       else if (kind === 'exile' && o.zone !== 'exile') moveObj(o, 'exile');
       else if (kind === 'stack' || kind === 'stackpos') moveObj(o, 'stack');
     } else {
@@ -618,6 +639,8 @@ export function App() {
       else if (kind === 'stack') reorderStack(it, g.stack.length - 1);
       else if (kind === 'bf') stackTo(it, 'battlefield', arg as PlayerId);
       else if (kind === 'gy') stackTo(it, 'graveyard');
+      else if (kind === 'lib') stackTo(it, 'library');
+      else if (kind === 'hand') stackTo(it, 'hand');
       else if (kind === 'exile') stackTo(it, 'exile');
     }
   }
@@ -768,7 +791,13 @@ export function App() {
     if (!key.startsWith('card:')) return undefined;
     const o = g.objs.find((x) => x.uid === Number(key.slice(5)));
     if (!o) return undefined;
-    return o.zone === 'graveyard' ? `gy:${o.owner}` : 'exile';
+    return o.zone === 'graveyard'
+      ? `gy:${o.owner}`
+      : o.zone === 'library'
+        ? `lib:${o.owner}`
+        : o.zone === 'hand'
+          ? `hand:${o.owner}`
+          : 'exile';
   }
 
   const links: Link[] = g.stack.flatMap((it) =>
@@ -855,6 +884,26 @@ export function App() {
   // Storico: tutti i messaggi, il più recente in alto; quelli "futuri" (dopo pos) appaiono attenuati
   const entries = timeline.flatMap((s, i) => s.messages.map((text, j) => ({ i, j, text, time: s.time })));
   const currentMessage = timeline[pos].messages[timeline[pos].messages.length - 1] ?? '';
+  /** Pulsante di una zona del giocatore (grimorio, mano, cimitero): icona + numero; apre il pannello. */
+  const zoneButton = (id: PlayerId, kind: 'lib' | 'hand' | 'gy', icon: string, count: number, label: string) => {
+    const key = `${kind}:${id}`;
+    return (
+      <button
+        type="button"
+        class={`zone-btn${panels.includes(key) ? ' on' : ''}${drag?.over === key ? ' drop-over' : ''}`}
+        data-obj={key}
+        data-drop={key}
+        aria-pressed={panels.includes(key)}
+        aria-label={`${label}: ${count}`}
+        title={label}
+        onClick={() => togglePanel(key)}
+      >
+        <Icon d={icon} size={15} />
+        <span>{count}</span>
+      </button>
+    );
+  };
+
   /** Zona di un giocatore: intestazione (chiudi, nome, cimitero), priorità, campo di battaglia. */
   const renderZone = (id: PlayerId) => {
           const mine = g.objs.filter((o) => o.zone === 'battlefield' && o.controller === id);
@@ -879,7 +928,7 @@ export function App() {
                   <Icon d={chevron(!isCollapsed)} size={16} />
                 </button>
                 <button type="button" {...objProps(objKey.player(id), 'player-tag')}>
-                  {t('player')} {id}
+                  {narrow ? id : `${t('player')} ${id}`}
                 </button>
                 {!narrow && !isCollapsed && (
                   <div class="zoom-btns">
@@ -891,19 +940,9 @@ export function App() {
                     </button>
                   </div>
                 )}
-                <button
-                  type="button"
-                  class={`gy${panels.includes(`gy:${id}`) ? ' on' : ''}${drag?.over === `gy:${id}` ? ' drop-over' : ''}`}
-                  data-obj={`gy:${id}`}
-                  data-drop={`gy:${id}`}
-                  aria-pressed={panels.includes(`gy:${id}`)}
-                  aria-label={`${tr('graveyardOf', { p: id })}: ${gy.length}`}
-                  title={tr('graveyardOf', { p: id })}
-                  onClick={() => togglePanel(`gy:${id}`)}
-                >
-                  {gy.length > 0 ? <img src={gy[gy.length - 1].card.image} alt="" /> : <span class="gy-empty" />}
-                  <span class="gy-count">{gy.length}</span>
-                </button>
+                {zoneButton(id, 'lib', LIBRARY, library(id).length, tr('libraryOf', { p: id }))}
+                {zoneButton(id, 'hand', HAND, hand(id).length, tr('handOf', { p: id }))}
+                {zoneButton(id, 'gy', TOMBSTONE, gy.length, tr('graveyardOf', { p: id }))}
               </div>
               {hasPrio && (
                 <div class="prio-strip">
@@ -1111,8 +1150,18 @@ export function App() {
         <div class="panels">
           {panels.map((id) => {
             const isExile = id === 'exile';
-            const owner = (isExile ? null : id.slice(3)) as PlayerId | null;
-            const cards = isExile ? exile : graveyard(owner!);
+            const [kind, who] = id.split(':');
+            const owner = (isExile ? null : who) as PlayerId | null;
+            // grimorio: la prima carta mostrata è quella in cima
+            const cards = isExile
+              ? exile
+              : kind === 'lib'
+                ? [...library(owner!)].reverse()
+                : kind === 'hand'
+                  ? hand(owner!)
+                  : graveyard(owner!);
+            const zoneLabel = kind === 'lib' ? t('library') : kind === 'hand' ? t('hand') : t('graveyard');
+            const zoneIcon = kind === 'lib' ? LIBRARY : kind === 'hand' ? HAND : TOMBSTONE;
             return (
               <section
                 key={id}
@@ -1121,9 +1170,10 @@ export function App() {
                 style={{ '--pc': owner ? PLAYER_COLOR[owner] : '#9aa3b5' }}
               >
                 <div class="panel-head">
-                  {isExile ? <Portal size={16} /> : <span class="panel-dot" />}
+                  {isExile ? <Portal size={16} /> : <Icon d={zoneIcon} size={16} />}
                   <span class="panel-title">
-                    {isExile ? t('exile') : `${t('graveyard')} · ${t('player')} ${owner}`} ({cards.length})
+                    {isExile ? t('exile') : `${zoneLabel} · ${t('player')} ${owner}`} ({cards.length})
+                    {kind === 'lib' && cards.length > 1 && <small> · {t('topFirst')}</small>}
                   </span>
                   <button type="button" class="panel-close" aria-label={t('close')} onClick={() => togglePanel(id)}>
                     <Icon d={CROSS} size={16} />

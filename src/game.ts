@@ -14,8 +14,9 @@ export const PLAYER_COLOR: Record<PlayerId, string> = {
 };
 
 /** Zone in cui una carta può stare fuori dalla pila. */
-export type Zone = 'battlefield' | 'graveyard' | 'exile';
-export type Destination = Zone | 'stack';
+export type Zone = 'battlefield' | 'graveyard' | 'exile' | 'library' | 'hand';
+/** 'libraryBottom' = in fondo al grimorio; 'library' = in cima */
+export type Destination = Zone | 'stack' | 'libraryBottom';
 
 /** Carta (o token) sul campo di battaglia, nel cimitero o in esilio. */
 export interface CardObj {
@@ -142,7 +143,15 @@ export function relocate(
       : { ...g, objs: g.objs.filter((o) => o.uid !== src.obj.uid) };
 
   const where =
-    dest === 'graveyard' ? `gy:${owner}` : dest === 'exile' ? 'exile' : null;
+    dest === 'graveyard'
+      ? `gy:${owner}`
+      : dest === 'exile'
+        ? 'exile'
+        : dest === 'library' || dest === 'libraryBottom'
+          ? `lib:${owner}`
+          : dest === 'hand'
+            ? `hand:${owner}`
+            : null;
 
   if (isToken && dest !== 'battlefield') {
     return { game: { ...next, gone: { ...next.gone, [oldKey]: where ?? 'exile' } }, tokenGone: true };
@@ -151,15 +160,19 @@ export function relocate(
   const uid = newUid();
   if (dest === 'stack') {
     next = { ...next, stack: [...next.stack, { uid, card, owner, controller, targets: [], kind: 'spell' }] };
+  } else if (dest === 'libraryBottom') {
+    // fondo del grimorio = primo della lista (la cima è l'ultimo)
+    next = { ...next, objs: [{ uid, card, owner, controller: owner, zone: 'library' }, ...next.objs] };
   } else {
-    next = { ...next, objs: [...next.objs, { uid, card, owner, controller, zone: dest }] };
+    const ctrl = dest === 'battlefield' ? controller : owner;
+    next = { ...next, objs: [...next.objs, { uid, card, owner, controller: ctrl, zone: dest }] };
   }
   const newKey = dest === 'stack' ? objKey.stack(uid) : dest === 'battlefield' ? objKey.perm(uid) : where!;
   return { game: { ...next, gone: { ...next.gone, [oldKey]: newKey } }, tokenGone: false };
 }
 
 /** Dove va una magia quando lascia la pila. */
-export type LeaveTo = Zone | 'hand' | 'cease';
+export type LeaveTo = Zone | 'cease';
 
 /**
  * Destinazione di una magia che lascia la pila.
