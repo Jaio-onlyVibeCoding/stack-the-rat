@@ -104,7 +104,7 @@ export function App() {
   const [preview, setPreview] = useState<Card | null>(null);
   const [targeting, setTargeting] = useState<number | null>(null);
   const [panels, setPanels] = useState<string[]>([]); // 'exile' | 'gy:A' ... nell'ordine di apertura
-  const [menu, setMenu] = useState<{ uid: number; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ uid: number; x: number; y: number; top: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [share, setShare] = useState<{ url: string; copied: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -799,7 +799,8 @@ export function App() {
     e.stopPropagation();
     setMoveOpen(false);
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setMenu({ uid, x: r.right, y: r.bottom });
+    // y = sotto il pulsante; top = sopra il pulsante (usato se la carta è nella metà bassa dello schermo)
+    setMenu({ uid, x: r.right, y: r.bottom, top: r.top });
   }
 
   // ---- Condivisione ----
@@ -1462,10 +1463,20 @@ export function App() {
           <div
             class="menu"
             role="menu"
-            style={{
-              left: `${Math.max(8, Math.min(menu.x - 220, window.innerWidth - 228))}px`,
-              top: `${Math.max(8, Math.min(menu.y + 4, window.innerHeight - 300))}px`,
-            }}
+            style={
+              // carta nella metà bassa: il menu si apre verso l'alto; in ogni caso non esce dallo schermo e scorre
+              menu.y > window.innerHeight / 2
+                ? {
+                    left: `${Math.max(8, Math.min(menu.x - 220, window.innerWidth - 228))}px`,
+                    bottom: `${Math.max(8, window.innerHeight - menu.top + 4)}px`,
+                    maxHeight: `${Math.max(160, menu.top - 12)}px`,
+                  }
+                : {
+                    left: `${Math.max(8, Math.min(menu.x - 220, window.innerWidth - 228))}px`,
+                    top: `${menu.y + 4}px`,
+                    maxHeight: `${Math.max(160, window.innerHeight - menu.y - 12)}px`,
+                  }
+            }
             onClick={(e) => e.stopPropagation()}
           >
             <p class="menu-title">
