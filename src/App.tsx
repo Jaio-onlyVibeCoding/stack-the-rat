@@ -2094,7 +2094,7 @@ export function App() {
                     onInput={(e) => setCustomCounter((e.target as HTMLInputElement).value)}
                   />
                   <button type="submit" class="secondary">
-                    {t('add')}
+                    {t('addCounter')}
                   </button>
                 </form>
                 <button type="button" class="primary" onClick={() => setCounterFor(null)}>
