@@ -172,6 +172,29 @@ export async function decodeShare(code: string): Promise<SharedTimeline> {
   return { timeline, pos };
 }
 
+/** Archivio dei link brevi (Cloudflare Worker, vedi cloudflare/README.md) */
+export const SHORT_LINK_URL = 'https://stack-the-rat.jacopotavianucci.workers.dev';
+
+/** Salva il codice nell'archivio e restituisce il link corto; null se l'archivio non risponde. */
+export async function shortLink(code: string): Promise<string | null> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch(`${SHORT_LINK_URL}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: code,
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const { id } = (await res.json()) as { id?: string };
+    return id ? `${SHORT_LINK_URL}/${id}` : null;
+  } catch {
+    return null;
+  }
+}
+
 export function shareUrl(code: string): string {
   return `${location.origin}${location.pathname}#s=${code}`;
 }

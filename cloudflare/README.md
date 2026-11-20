@@ -22,6 +22,8 @@ Aprendo il link si viene reindirizzati all'app con il setup completo.
 7. **Indirizzo** — copia l'indirizzo del Worker (es. `https://stack-the-rat.mario.workers.dev`)
    e comunicalo: va inserito nell'app (`SHORT_LINK_URL` in `src/share.ts`).
 
+Indirizzo attuale: https://stack-the-rat.jacopotavianucci.workers.dev
+
 ## Limiti del piano gratuito
 - 100.000 richieste al giorno, 1.000 nuovi link al giorno, 1 GB di spazio (circa un milione di setup).
 - I setup non scadono. Lo stesso setup produce sempre lo stesso link (nessun doppione).

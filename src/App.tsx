@@ -24,7 +24,7 @@ import {
 } from './game';
 import { LANGS, detect, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
 import { getCard, type Card } from './scryfall';
-import { decodeShare, encodeShare, sharedCodeFromUrl, shareUrl } from './share';
+import { decodeShare, encodeShare, sharedCodeFromUrl, shareUrl, shortLink } from './share';
 import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
 import { Help } from './Help';
@@ -119,7 +119,7 @@ export function App() {
   const [panels, setPanels] = useState<string[]>([]); // 'exile' | 'gy:A' ... nell'ordine di apertura
   const [menu, setMenu] = useState<{ uid: number; x: number; y: number; top: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [share, setShare] = useState<{ url: string; copied: boolean } | null>(null);
+  const [share, setShare] = useState<{ url: string; copied: boolean; long?: string; loading?: boolean; fallback?: boolean } | null>(null);
   /** includere lo storico nel link condiviso */
   const [shareHistory, setShareHistory] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -967,12 +967,19 @@ export function App() {
   }
 
   // ---- Condivisione ----
+  /** Crea il link: prima quello lungo (sempre valido), poi quello corto dall'archivio, se risponde. */
   async function openShare(withHistory = shareHistory) {
+    let code: string;
     try {
-      setShare({ url: shareUrl(await encodeShare(timeline, pos, withHistory)), copied: false });
+      code = await encodeShare(timeline, pos, withHistory);
     } catch {
       setShare({ url: '', copied: false });
+      return;
     }
+    const long = shareUrl(code);
+    setShare({ url: long, long, copied: false, loading: true });
+    const short = await shortLink(code);
+    setShare({ url: short ?? long, long, copied: false, fallback: !short });
   }
   async function copyShare() {
     if (!share?.url) return;
@@ -2147,9 +2154,15 @@ export function App() {
                   {t('shareWithHistory')}
                 </label>
                 <input id="share-url" readOnly value={share.url} onFocus={(e) => (e.target as HTMLInputElement).select()} />
-                <p class="status">{tr('shareLength', { n: String(share.url.length) })}</p>
+                <p class="status">
+                  {share.loading
+                    ? t('shortLoading')
+                    : share.fallback
+                      ? t('shortFailed')
+                      : tr('shareLength', { n: String(share.url.length) })}
+                </p>
                 <div class="actions">
-                  <button type="button" class="primary" onClick={copyShare}>
+                  <button type="button" class="primary" onClick={copyShare} disabled={share.loading}>
                     {share.copied ? t('copied') : t('copy')}
                   </button>
                   {'share' in navigator && (
