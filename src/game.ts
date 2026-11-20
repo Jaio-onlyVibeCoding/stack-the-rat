@@ -32,6 +32,14 @@ export interface CardObj {
   prepared?: boolean;
   /** Girata: bifronte → retro (trasformata); flip → capovolta; altre → a faccia in giù */
   flipped?: boolean;
+  /** Aura / Equipaggiamento / Fortificazione: uid del permanente a cui è attaccata */
+  attachedTo?: number;
+  /** Mutare: carte sotto la carta in cima (il permanente fuso è uno solo, CR 721) */
+  under?: { card: Card; owner: PlayerId }[];
+  /** Segnalini: nome → quantità (CR 122) */
+  counters?: Record<string, number>;
+  /** Carta esiliata collegata a un permanente (es. Anello dell'Oblio): uid di quel permanente */
+  linkedTo?: number;
 }
 
 /** Tipo di oggetto in pila: magia, abilità attivata (CR 602) o innescata (CR 603). */
@@ -51,6 +59,8 @@ export interface StackItem {
   choices?: Choices;
   /** copia di una magia (es. magia preparata): lasciando la pila cessa di esistere (CR 704.5e) */
   copy?: boolean;
+  /** abilità "le carte esiliate collegate tornano sul campo": uid delle carte in esilio */
+  returns?: number[];
 }
 
 /** Tutto lo stato di gioco: è ciò che si salva nella cronologia e che si condivide. */

@@ -20,6 +20,7 @@ import {
   type PlayerId,
   type StackItem,
   type StackKind,
+  type Zone,
 } from './game';
 import { LANGS, detect, langInfo, setLang, useI18n, type Key, type Lang } from './i18n';
 import { getCard, type Card } from './scryfall';
@@ -80,6 +81,10 @@ const TOMBSTONE = 'M6 21V9.5a6 6 0 0 1 12 0V21M3.5 21h17M12 7.5v6M9.5 10h5';
 const CARD_BACK = 'https://backs.scryfall.io/normal/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg';
 const FLIP = 'M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4';
 const DUP = 'M8 8h11v13H8zM5 16V3h11';
+const LINK = 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1';
+const CLIP = 'M16 6l-7.5 7.5a2.1 2.1 0 0 0 3 3L19 9a4.2 4.2 0 0 0-6-6l-7.5 7.5a6.4 6.4 0 0 0 9 9L20 14';
+const MUTATE = 'M12 3l8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4';
+const COUNTER = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v8M8 12h8';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -197,6 +202,13 @@ export function App() {
       document.removeEventListener('touchcancel', end);
     };
   }, []);
+  /** scelta di un permanente per attaccare, mutare o collegare una carta */
+  const [picking, setPicking] = useState<{ uid: number; action: 'attach' | 'mutateOver' | 'mutateUnder' | 'link' } | null>(
+    null,
+  );
+  /** carta di cui si modificano i segnalini */
+  const [counterFor, setCounterFor] = useState<number | null>(null);
+  const [customCounter, setCustomCounter] = useState('');
   /** colonna della pila larga il doppio */
   const [wideStack, setWideStack] = useState(false);
   const [isFull, setIsFull] = useState(false);
@@ -545,7 +557,100 @@ export function App() {
     const card = o.card.printedName;
     const msgs = [tr('logMove', { card, where: whereLabel(dest, dest === 'battlefield' ? holder : o.owner) })];
     if (tokenGone) msgs.push(tr('logTokenGone', { card }));
+    if (o.zone === 'battlefield' && dest !== 'battlefield') next = leaveBattlefield(next, o, dest, msgs);
     commit(next, ...msgs);
+  }
+
+  /**
+   * Conseguenze di un permanente che lascia il campo di battaglia:
+   * Aure attaccate → cimitero (704.5m); Equipaggiamenti → restano, staccati (704.5n);
+   * carte fuse sotto (mutare) → stessa zona; carte esiliate collegate → si innesca l'abilità che le fa tornare.
+   */
+  function leaveBattlefield(base: Game, o: CardObj, dest: Destination, msgs: string[]): Game {
+    let next = base;
+    for (const a of next.objs.filter((x) => x.zone === 'battlefield' && x.attachedTo === o.uid)) {
+      if (/\bAura\b/.test(a.card.oracleType)) {
+        next = relocate(next, { kind: 'obj', obj: a }, 'graveyard').game;
+        msgs.push(tr('logAuraSba', { card: a.card.printedName }));
+      } else {
+        next = { ...next, objs: next.objs.map((x) => (x.uid === a.uid ? { ...x, attachedTo: undefined } : x)) };
+        msgs.push(tr('logEquipSba', { card: a.card.printedName }));
+      }
+    }
+    if (o.under?.length) {
+      const zone: Zone = dest === 'stack' ? 'graveyard' : dest === 'libraryBottom' ? 'library' : dest;
+      next = {
+        ...next,
+        objs: [...next.objs, ...o.under.map((u) => ({ uid: newUid(), card: u.card, owner: u.owner, controller: u.owner, zone }))],
+      };
+      msgs.push(tr('logMergedMove', { card: o.card.printedName }));
+    }
+    const linked = next.objs.filter((x) => x.zone === 'exile' && x.linkedTo === o.uid);
+    if (linked.length) {
+      const item: StackItem = {
+        uid: newUid(),
+        card: o.card,
+        owner: o.owner,
+        controller: o.controller,
+        targets: [],
+        kind: 'triggered',
+        text: t('linkReturnText'),
+        returns: linked.map((x) => x.uid),
+      };
+      next = { ...next, stack: [...next.stack, item], passed: [] };
+      msgs.push(tr('logLinkTrigger', { card: o.card.printedName }));
+    }
+    return next;
+  }
+
+  // ---- Attaccare, mutare, collegare, segnalini ----
+  const canPick = (key: string) =>
+    !!picking && key.startsWith('perm:') && Number(key.slice(5)) !== picking.uid;
+  function onPick(key: string) {
+    if (!picking) return;
+    const host = g.objs.find((x) => x.uid === Number(key.slice(5)));
+    const o = g.objs.find((x) => x.uid === picking.uid);
+    const action = picking.action;
+    setPicking(null);
+    if (!host || !o) return;
+    const card = o.card.printedName;
+    if (action === 'attach') setObj(o, { attachedTo: host.uid }, tr('logAttach', { card, host: host.card.printedName }));
+    else if (action === 'link') setObj(o, { linkedTo: host.uid }, tr('logLink', { card, host: host.card.printedName }));
+    else {
+      // Mutare: il permanente fuso è lo stesso oggetto della creatura su cui si muta (CR 721.2)
+      const over = action === 'mutateOver';
+      const under = over
+        ? [...(host.under ?? []), { card: host.card, owner: host.owner }, ...(o.under ?? [])]
+        : [{ card: o.card, owner: o.owner }, ...(o.under ?? []), ...(host.under ?? [])];
+      const merged: CardObj = { ...host, card: over ? o.card : host.card, under };
+      commit(
+        { ...g, objs: g.objs.filter((x) => x.uid !== o.uid).map((x) => (x.uid === host.uid ? merged : x)) },
+        tr('logMutate', { card, where: t(over ? 'mutOver' : 'mutUnder'), host: host.card.printedName }),
+      );
+    }
+  }
+  /** Cambia i segnalini; +1/+1 e -1/-1 insieme si annullano a coppie (CR 704.5q). */
+  function changeCounter(o: CardObj, name: string, delta: number) {
+    const c = { ...(o.counters ?? {}) };
+    c[name] = Math.max(0, (c[name] ?? 0) + delta);
+    if (!c[name]) delete c[name];
+    const msgs: string[] = [];
+    const plus = c['+1/+1'] ?? 0;
+    const minus = c['-1/-1'] ?? 0;
+    if (o.zone === 'battlefield' && plus && minus) {
+      const n = Math.min(plus, minus);
+      c['+1/+1'] = plus - n;
+      c['-1/-1'] = minus - n;
+      if (!c['+1/+1']) delete c['+1/+1'];
+      if (!c['-1/-1']) delete c['-1/-1'];
+      msgs.push(tr('logAnnihilate', { n: String(n), card: o.card.printedName }));
+    }
+    const list = Object.entries(c).map(([k, v]) => `${k} ×${v}`).join(', ') || '—';
+    commit(
+      { ...g, objs: g.objs.map((x) => (x.uid === o.uid ? { ...x, counters: c } : x)) },
+      tr('logCounters', { card: o.card.printedName, list }),
+      ...msgs,
+    );
   }
   function tokenCopy(o: CardObj) {
     const controller = o.zone === 'battlefield' ? o.controller : o.owner;
@@ -734,9 +839,18 @@ export function App() {
   function finishResolution() {
     const it = resolvingItem;
     if (!it) return;
+    // abilità "le carte collegate tornano": le carte ancora in esilio tornano sul campo del proprietario
+    let base = g;
+    const extra: string[] = [];
+    for (const uid of it.returns ?? []) {
+      const e = base.objs.find((x) => x.uid === uid && x.zone === 'exile');
+      if (!e) continue;
+      base = relocate(base, { kind: 'obj', obj: e }, 'battlefield', e.owner).game;
+      extra.push(tr('logLinkReturn', { card: e.card.printedName }));
+    }
     // CR 608.3: permanente → campo; CR 608.2n: istantaneo/stregoneria → cimitero; abilità e copie cessano di esistere
-    const { game, msgs } = leaveStack(g, it, true);
-    commit({ ...game, resolving: null, priority: g.active, passed: [] }, ...msgs);
+    const { game, msgs } = leaveStack(base, it, true);
+    commit({ ...game, resolving: null, priority: g.active, passed: [] }, ...extra, ...msgs);
   }
 
   // ---- Bersagli ----
@@ -781,6 +895,7 @@ export function App() {
     }
   }
   function onBackgroundTap(e: MouseEvent) {
+    if (picking && !(e.target as Element).closest('[data-obj]')) setPicking(null);
     if (targeting === null) return;
     if (!(e.target as Element).closest('[data-obj], .tgt')) setTargeting(null);
   }
@@ -819,9 +934,14 @@ export function App() {
 
   const objProps = (key: string, extraClass: string) => ({
     'data-obj': key,
-    class: `${extraClass}${canTarget(key) ? ' can-target' : ''}`,
+    class: `${extraClass}${canTarget(key) || canPick(key) ? ' can-target' : ''}`,
     onClick: () => {
-      if (!justDropped.current) onObjectTap(key);
+      if (justDropped.current) return;
+      if (picking) {
+        if (canPick(key)) onPick(key);
+        return;
+      }
+      onObjectTap(key);
     },
   });
 
@@ -859,6 +979,10 @@ export function App() {
       await navigator.share({ title: 'Stack The Rat', url: share.url });
     } catch {}
   }
+
+  /** Carta attaccata a un permanente che è ancora sul campo */
+  const isAttached = (o: CardObj) =>
+    o.attachedTo !== undefined && g.objs.some((h) => h.uid === o.attachedTo && h.zone === 'battlefield');
 
   /** Immagine di una carta sul campo tenendo conto di "girata": retro, faccia posteriore o carta capovolta. */
   const hasBackFace = (c: Card) => c.faces.filter((f) => f.image).length > 1;
@@ -914,6 +1038,36 @@ export function App() {
         <Icon d={EYE} size={14} />
       </button>
       {o.token && <span class="token-tag">{t('token')}</span>}
+      {o.counters && Object.keys(o.counters).length > 0 && (
+        <span class="counters">
+          {Object.entries(o.counters).map(([k, v]) => (
+            <b key={k}>
+              {k} ×{v}
+            </b>
+          ))}
+        </span>
+      )}
+      {o.under?.length ? (
+        <span class="mut-tag" title={t('mutated')}>
+          <Icon d={MUTATE} size={10} /> {o.under.length + 1}
+        </span>
+      ) : null}
+      {(o.linkedTo !== undefined && o.zone === 'exile') ||
+      g.objs.some((x) => x.zone === 'exile' && x.linkedTo === o.uid && o.zone === 'battlefield') ? (
+        <span
+          class="link-tag"
+          title={
+            o.zone === 'exile'
+              ? g.objs.find((h) => h.uid === o.linkedTo)?.card.printedName ?? t('linked')
+              : g.objs
+                  .filter((x) => x.zone === 'exile' && x.linkedTo === o.uid)
+                  .map((x) => x.card.printedName)
+                  .join(', ')
+          }
+        >
+          <Icon d={LINK} size={11} />
+        </span>
+      ) : null}
       {o.prepared && o.zone === 'battlefield' && <span class="prep-tag">{t('prepared')}</span>}
       {cls === 'tile' && <span class="owner-tag">{o.owner}</span>}
       <button type="button" class="more" aria-label={`${t('menu')}: ${o.card.printedName}`} onClick={(e) => openMenu(o.uid, e)}>
@@ -947,7 +1101,8 @@ export function App() {
 
   /** Zona di un giocatore: intestazione (chiudi, nome, cimitero), priorità, campo di battaglia. */
   const renderZone = (id: PlayerId) => {
-          const mine = g.objs.filter((o) => o.zone === 'battlefield' && o.controller === id);
+          // permanenti del giocatore; Aure ed Equipaggiamenti attaccati compaiono insieme al permanente che li ospita
+          const mine = g.objs.filter((o) => o.zone === 'battlefield' && o.controller === id && !isAttached(o));
           const gy = graveyard(id);
           const hasPrio = g.priority === id;
           const isCollapsed = collapsed.includes(id);
@@ -1013,7 +1168,17 @@ export function App() {
                       </button>
                     </div>
                   ))}
-                {mine.map((o) => renderTile(o, 'perm'))}
+                {mine.map((o) => {
+                  const att = g.objs.filter((x) => x.zone === 'battlefield' && x.attachedTo === o.uid);
+                  return att.length ? (
+                    <div key={o.uid} class="attach-group">
+                      {att.map((a) => renderTile(a, 'perm attached'))}
+                      {renderTile(o, 'perm')}
+                    </div>
+                  ) : (
+                    renderTile(o, 'perm')
+                  );
+                })}
               </div>
               )}
             </section>
@@ -1047,7 +1212,7 @@ export function App() {
   const menuObj = menu ? g.objs.find((o) => o.uid === menu.uid) : undefined;
 
   return (
-    <main class={`shell${targeting !== null ? ' targeting' : ''}`} onClick={onBackgroundTap}>
+    <main class={`shell${targeting !== null || picking ? ' targeting' : ''}`} onClick={onBackgroundTap}>
       <header class="top">
         <h1>Stack The Rat</h1>
         {narrow && (
@@ -1162,9 +1327,11 @@ export function App() {
         </div>
       )}
 
-      {(!narrow || searchOpen || targeting !== null) && (
+      {(!narrow || searchOpen || targeting !== null || picking) && (
         <div class="search-row">
-          {targeting !== null ? (
+          {picking ? (
+            <p class="hint">{t('pickHint')}</p>
+          ) : targeting !== null ? (
             <p class="hint">{t('targetingHint')}</p>
           ) : (
             <CardSearch
@@ -1176,7 +1343,7 @@ export function App() {
             />
           )}
           {narrow ? (
-            targeting === null && (
+            targeting === null && !picking && (
               <button type="button" class="icon-btn" aria-label={t('close')} onClick={() => setSearchOpen(false)}>
                 <Icon d={CROSS} size={16} />
               </button>
@@ -1611,6 +1778,80 @@ export function App() {
                 <Icon d={DUP} size={16} /> {t('duplicateCard')}
               </button>
             )}
+            {menuObj.zone === 'battlefield' && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setPicking({ uid: menuObj.uid, action: 'attach' });
+                  setMenu(null);
+                }}
+              >
+                <Icon d={CLIP} size={16} /> {t('attachTo')}
+              </button>
+            )}
+            {menuObj.zone === 'battlefield' && menuObj.attachedTo !== undefined && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setObj(menuObj, { attachedTo: undefined }, tr('logDetach', { card: menuObj.card.printedName }));
+                  setMenu(null);
+                }}
+              >
+                <Icon d={CLIP} size={16} /> {t('detach')}
+              </button>
+            )}
+            {menuObj.zone === 'battlefield' && menuObj.card.keywords.includes('Mutate') && (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setPicking({ uid: menuObj.uid, action: 'mutateOver' });
+                    setMenu(null);
+                  }}
+                >
+                  <Icon d={MUTATE} size={16} /> {t('mutateOver')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setPicking({ uid: menuObj.uid, action: 'mutateUnder' });
+                    setMenu(null);
+                  }}
+                >
+                  <Icon d={MUTATE} size={16} /> {t('mutateUnder')}
+                </button>
+              </>
+            )}
+            {(menuObj.zone === 'battlefield' || menuObj.zone === 'exile') && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setCounterFor(menuObj.uid);
+                  setMenu(null);
+                }}
+              >
+                <Icon d={COUNTER} size={16} /> {t('countersMenu')}
+              </button>
+            )}
+            {menuObj.zone === 'exile' && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (menuObj.linkedTo !== undefined)
+                    setObj(menuObj, { linkedTo: undefined }, tr('logUnlink', { card: menuObj.card.printedName }));
+                  else setPicking({ uid: menuObj.uid, action: 'link' });
+                  setMenu(null);
+                }}
+              >
+                <Icon d={LINK} size={16} /> {menuObj.linkedTo !== undefined ? t('unlink') : t('linkTo')}
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -1813,6 +2054,56 @@ export function App() {
           </section>
         </div>
       )}
+
+      {counterFor !== null &&
+        (() => {
+          const co = g.objs.find((x) => x.uid === counterFor);
+          if (!co) return null;
+          const names = [...new Set([...t('counterNames').split('|'), ...Object.keys(co.counters ?? {})])];
+          return (
+            <div class="sheet-backdrop" onClick={() => setCounterFor(null)}>
+              <section class="sheet choices-sheet" onClick={(e) => e.stopPropagation()}>
+                <h2>{tr('countersTitle', { card: co.card.printedName })}</h2>
+                <div class="counter-list">
+                  {names.map((n) => (
+                    <div key={n} class={`counter-row${co.counters?.[n] ? ' has' : ''}`}>
+                      <span>{n}</span>
+                      <button type="button" aria-label={`− ${n}`} onClick={() => changeCounter(co, n, -1)} disabled={!co.counters?.[n]}>
+                        −
+                      </button>
+                      <b>{co.counters?.[n] ?? 0}</b>
+                      <button type="button" aria-label={`+ ${n}`} onClick={() => changeCounter(co, n, 1)}>
+                        +
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <form
+                  class="counter-custom"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const n = customCounter.trim();
+                    if (n) changeCounter(co, n, 1);
+                    setCustomCounter('');
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={customCounter}
+                    placeholder={t('counterCustom')}
+                    onInput={(e) => setCustomCounter((e.target as HTMLInputElement).value)}
+                  />
+                  <button type="submit" class="secondary">
+                    {t('add')}
+                  </button>
+                </form>
+                <button type="button" class="primary" onClick={() => setCounterFor(null)}>
+                  {t('close')}
+                </button>
+              </section>
+            </div>
+          );
+        })()}
 
       {help && <Help onClose={() => toggleHelp(false)} />}
 

@@ -1,3 +1,4 @@
+import { createPortal } from 'preact/compat';
 import { useState } from 'preact/hooks';
 
 /**
@@ -72,7 +73,9 @@ export function StepPicker({
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
-      {pos && (
+      {/* il menu va sul body: la colonna della pila (container query) "intrappolerebbe" un menu fisso */}
+      {pos &&
+        createPortal(
         <div class="step-menu-backdrop" onClick={() => setPos(null)}>
           <ul
             class="step-menu"
@@ -116,8 +119,9 @@ export function StepPicker({
               ),
             )}
           </ul>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }
