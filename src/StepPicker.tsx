@@ -13,6 +13,7 @@ export function StepPicker({
   warnStep,
   onPick,
   shortName,
+  centered = false,
 }: {
   step: number;
   groups: number[][];
@@ -24,12 +25,21 @@ export function StepPicker({
   onPick: (i: number) => void;
   /** se presente, nome breve da mostrare sul pulsante (telefono) */
   shortName?: (i: number) => string;
+  /** telefono: menu al centro dello schermo, alto quanto l'area visibile */
+  centered?: boolean;
 }) {
   const [pos, setPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   const single = groups.some((g) => g.length === 1 && g[0] === step);
 
   function toggle(e: MouseEvent) {
     if (pos) return setPos(null);
+    if (centered) {
+      // area davvero visibile (esclude le barre del browser del telefono)
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      const vw = window.visualViewport?.width ?? window.innerWidth;
+      const width = Math.min(320, vw - 16);
+      return setPos({ top: 8, left: Math.round((vw - width) / 2), width, maxHeight: Math.round(vh - 16) });
+    }
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const width = Math.max(240, r.width);
     const below = window.innerHeight - r.bottom - 12;

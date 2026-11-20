@@ -1276,6 +1276,7 @@ export function App() {
                   warnStep={anyFirstStrike() ? STEP.damage : null}
                   onPick={setStep}
                   shortName={narrow ? (i) => t('stepShort').split('|')[i] ?? '' : undefined}
+                  centered={narrow}
                 />
                 {anyFirstStrike() && (
                   <button
