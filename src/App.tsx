@@ -27,6 +27,7 @@ import { decodeGame, encodeGame, sharedCodeFromUrl, shareUrl } from './share';
 import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
 import { Help } from './Help';
+import { StepPicker } from './StepPicker';
 import { CardViewer } from './CardViewer';
 import { useDrag, type DragItem } from './dnd';
 
@@ -64,6 +65,10 @@ const EXTERNAL = 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 
 const DOTS = 'M5 12h.01M12 12h.01M19 12h.01';
 const EYE = 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
 const WARN = 'M12 3l10 18H2zM12 10v5M12 18h.01';
+const FULL = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5';
+const EXIT_FULL = 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5';
+const WIDEN = 'M8 7l-5 5 5 5M16 7l5 5-5 5';
+const NARROW = 'M4 7l5 5-5 5M20 7l-5 5 5 5';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -125,20 +130,23 @@ export function App() {
   const stackCol = useRef<HTMLElement>(null);
   /** carta aperta in grande con i chiarimenti */
   const [viewer, setViewer] = useState<Card | null>(null);
-  /** solo chi ha la priorità può lanciare, attivare, mettere in pila */
-  const [strict, setStrict] = useState(() => {
+  /** colonna della pila larga il doppio */
+  const [wideStack, setWideStack] = useState(false);
+  const [isFull, setIsFull] = useState(false);
+  useEffect(() => {
+    const f = () => setIsFull(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', f);
+    return () => document.removeEventListener('fullscreenchange', f);
+  }, []);
+  async function toggleFullscreen() {
     try {
-      return localStorage.getItem('strict') === '1';
-    } catch {
-      return false;
-    }
-  });
-  function toggleStrict(on: boolean) {
-    setStrict(on);
-    try {
-      localStorage.setItem('strict', on ? '1' : '0');
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
     } catch {}
   }
+  /** solo chi ha la priorità può lanciare, attivare, mettere in pila */
+  /** con "Fasi, priorità e velocità" attivo, solo chi ha la priorità può lanciare/attivare/mettere in pila */
+  const strict = phases;
   /** carte di esempio (placeholder) mostrate finché non si aggiunge una carta; tornano solo con il reset */
   const [showExamples, setShowExamples] = useState(true);
   const [examples, setExamples] = useState<{ perms: Card[]; spell?: Card }>({ perms: [] });
@@ -185,14 +193,14 @@ export function App() {
     setShowExamples(true);
     setViewer(null);
     setHistoryOpen(false);
+    setWideStack(false);
     setCopyAsk(null);
     // anche le impostazioni tornano a quelle iniziali
     try {
-      ['help', 'phases', 'strict', 'lang'].forEach((k) => localStorage.removeItem(k));
+      ['help', 'phases', 'lang'].forEach((k) => localStorage.removeItem(k));
     } catch {}
     setHelp(false);
     setPhases(false);
-    setStrict(false);
     setLang(detect());
   }
 
@@ -314,7 +322,7 @@ export function App() {
    * fase principale, a pila vuota, con la priorità. Controllata solo con "Solo chi ha priorità" + "Fasi".
    */
   function sorcerySpeedOk(card: Card, p: PlayerId): boolean {
-    if (!strict || !phases) return true;
+    if (!phases) return true;
     const slow = /\b(Sorcery|Creature|Artifact|Enchantment|Planeswalker|Battle)\b/.test(card.oracleType) && !card.keywords.includes('Flash');
     if (!slow) return true;
     const ok = p === g.active && (g.step === STEP.main1 || g.step === STEP.main2) && g.stack.length === 0;
@@ -871,6 +879,18 @@ export function App() {
       <header class="top">
         <h1>Stack The Rat</h1>
         <div class="player-count" role="group" aria-label={t('players')}>
+          {document.fullscreenEnabled && (
+            <button
+              type="button"
+              class="share-btn"
+              onClick={toggleFullscreen}
+              aria-pressed={isFull}
+              aria-label={t('fullscreen')}
+              title={t('fullscreen')}
+            >
+              <Icon d={isFull ? EXIT_FULL : FULL} size={18} />
+            </button>
+          )}
           <button type="button" class="share-btn" onClick={resetApp} aria-label={t('reset')} title={t('reset')}>
             <Icon d={RESET} size={18} />
           </button>
@@ -897,7 +917,14 @@ export function App() {
         </label>
       </header>
 
-      {notice && <p class="notice">{notice}</p>}
+      {notice && (
+        <div class="notice" role="status">
+          <span>{notice}</span>
+          <button type="button" class="notice-close" aria-label={t('close')} onClick={() => setNotice(null)}>
+            ✕
+          </button>
+        </div>
+      )}
 
       <div class="search-row">
         {targeting !== null ? <p class="hint">{t('targetingHint')}</p> : <CardSearch onPick={setPreview} />}
@@ -950,7 +977,7 @@ export function App() {
       <div class={`table ${g.players.length === 2 ? 'two' : 'multi'}`}>
         {columns[0].length > 0 && <div class="col">{columns[0].map(renderZone)}</div>}
 
-        <section class={`stack-col${drag?.over === 'stack' ? ' drop-over' : ''}`} ref={stackCol} data-drop="stack">
+        <section class={`stack-col${wideStack ? ' wide' : ''}${drag?.over === 'stack' ? ' drop-over' : ''}`} ref={stackCol} data-drop="stack">
           <div
             class={`priority${g.priority === null ? ' nobody' : ''}`}
             style={{ '--pc': g.priority ? PLAYER_COLOR[g.priority] : '' }}
@@ -980,54 +1007,29 @@ export function App() {
               {t('phases')}
             </label>
             {phases && (
-              <label class="step-select">
-                <span class="step-phase">
-                  {phaseName(g.step)}
-                  {anyFirstStrike() && (
-                    <button
-                      type="button"
-                      class="warn"
-                      title={t('firstStrikeWarn')}
-                      aria-label={t('firstStrikeWarn')}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setNotice(t('firstStrikeWarn'));
-                        setTimeout(() => setNotice(null), 8000);
-                      }}
-                    >
-                      <Icon d={WARN} size={14} /> 510.4
-                    </button>
-                  )}
-                </span>
-                <select
-                  value={g.step}
+              <div class="step-row">
+                <StepPicker
+                  step={g.step}
+                  groups={STEP_GROUPS}
+                  stepName={stepName}
+                  phaseName={phaseName}
                   disabled={g.resolving !== null}
-                  onChange={(e) => setStep(Number((e.target as HTMLSelectElement).value))}
-                >
-                  {/* fasi con sottofasi raggruppate; le fasi principali non hanno sottofasi */}
-                  {STEP_GROUPS.map((grp) =>
-                    grp.length === 1 ? (
-                      <option key={grp[0]} value={grp[0]}>
-                        {stepName(grp[0])}
-                      </option>
-                    ) : (
-                      <optgroup key={grp[0]} label={phaseName(grp[0])}>
-                        {grp.map((i) => (
-                          <option key={i} value={i}>
-                            {i === STEP.damage && anyFirstStrike() ? '⚠ ' : ''}
-                            {stepName(i)}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ),
-                  )}
-                </select>
-              </label>
+                  warnStep={anyFirstStrike() ? STEP.damage : null}
+                  onPick={setStep}
+                />
+                {anyFirstStrike() && (
+                  <button
+                    type="button"
+                    class="warn"
+                    title={t('firstStrikeWarn')}
+                    aria-label={t('firstStrikeWarn')}
+                    onClick={() => setNotice(t('firstStrikeWarn'))}
+                  >
+                    <Icon d={WARN} size={14} /> 510.4
+                  </button>
+                )}
+              </div>
             )}
-            <label class="help-toggle" title={t('strictHelp')}>
-              <input type="checkbox" checked={strict} onChange={(e) => toggleStrict((e.target as HTMLInputElement).checked)} />
-              {t('strict')}
-            </label>
             {resolvingItem ? (
               <>
                 <p class="resolving-msg">{tr('resolvingBanner', { card: resolvingItem.card.printedName })}</p>
@@ -1057,7 +1059,19 @@ export function App() {
             )}
           </div>
 
-          <h2>{t('stack')}</h2>
+          <div class="pile-head">
+            <h2>{t('stack')}</h2>
+            <button
+              type="button"
+              class="widen"
+              aria-pressed={wideStack}
+              aria-label={wideStack ? t('narrowStack') : t('widenStack')}
+              title={wideStack ? t('narrowStack') : t('widenStack')}
+              onClick={() => setWideStack(!wideStack)}
+            >
+              <Icon d={wideStack ? NARROW : WIDEN} size={16} />
+            </button>
+          </div>
           {g.stack.length === 0 ? (
             <>
               <p class="status">{t('stackEmpty')}</p>
