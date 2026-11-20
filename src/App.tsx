@@ -85,6 +85,8 @@ const LINK = 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-
 const CLIP = 'M16 6l-7.5 7.5a2.1 2.1 0 0 0 3 3L19 9a4.2 4.2 0 0 0-6-6l-7.5 7.5a6.4 6.4 0 0 0 9 9L20 14';
 const MUTATE = 'M12 3l8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4';
 const COUNTER = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v8M8 12h8';
+const LOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11';
+const UNLOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 6.8-1.2';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -120,6 +122,18 @@ export function App() {
   const [menu, setMenu] = useState<{ uid: number; x: number; y: number; top: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [share, setShare] = useState<{ url: string; copied: boolean; long?: string; loading?: boolean; fallback?: boolean } | null>(null);
+  /** condizione bloccata: il link condiviso parte da lì (una sola alla volta; null = nessuna) */
+  const [locked, setLocked] = useState<number | null>(null);
+  /** richiesta di conferma prima di cancellare una parte di storico */
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [dontAsk, setDontAsk] = useState(false);
+  const skipDeleteConfirm = () => {
+    try {
+      return localStorage.getItem('noConfirmDelete') === '1';
+    } catch {
+      return false;
+    }
+  };
   /** includere lo storico nel link condiviso */
   const [shareHistory, setShareHistory] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -264,6 +278,10 @@ export function App() {
   function resetApp() {
     if (!window.confirm(t('resetConfirm'))) return;
     setTimeline([{ game: initialGame(), messages: [t('logReset')], time: now() }]);
+    setLocked(null);
+    try {
+      localStorage.removeItem('noConfirmDelete');
+    } catch {}
     setPos(0);
     setTargeting(null);
     setPanels([]);
@@ -331,9 +349,30 @@ export function App() {
   /** Nuova condizione: cancella le condizioni "future" e aggiunge questa in fondo. */
   function commit(next: Game, ...messages: string[]) {
     const tl = [...timeline.slice(0, pos + 1), { game: next, messages, time: now() }].slice(-HISTORY_LIMIT);
+    if (locked !== null && locked > pos) setLocked(null); // la condizione bloccata è stata sostituita
     setTimeline(tl);
     setPos(tl.length - 1);
   }
+  /**
+   * Cancella una condizione dallo storico (es. un errore mentre si prepara un setup).
+   * Le condizioni successive restano come sono: ognuna è una fotografia completa del tavolo.
+   * Se si cancella la condizione attuale, il tavolo torna a quella precedente.
+   */
+  function deleteStep(i: number) {
+    if (timeline.length <= 1 || i < 0 || i >= timeline.length) return;
+    setTimeline(timeline.filter((_, k) => k !== i));
+    setPos(pos > i ? pos - 1 : pos === i ? Math.max(0, i - 1) : pos);
+    setLocked(locked === null || locked === i ? null : locked > i ? locked - 1 : locked);
+    setTargeting(null);
+  }
+  function askDelete(i: number) {
+    if (skipDeleteConfirm()) deleteStep(i);
+    else {
+      setDontAsk(false);
+      setConfirmDelete(i);
+    }
+  }
+
   function goTo(i: number) {
     if (i < 0 || i >= timeline.length) return;
     setPos(i);
@@ -971,7 +1010,11 @@ export function App() {
   async function openShare(withHistory = shareHistory) {
     let code: string;
     try {
-      code = await encodeShare(timeline, pos, withHistory);
+      // con una condizione bloccata, il link parte da lì (con lo storico successivo, se richiesto)
+      code =
+        locked !== null && locked < timeline.length
+          ? await encodeShare(timeline.slice(locked), 0, withHistory)
+          : await encodeShare(timeline, pos, withHistory);
     } catch {
       setShare({ url: '', copied: false });
       return;
@@ -1698,13 +1741,44 @@ export function App() {
         {historyOpen && (
           <ol class="log">
             {entries.length === 0 && <li class="status">{t('noHistory')}</li>}
-            {[...entries].reverse().map((e) => (
-              <li key={`${e.i}-${e.j}`} class={e.i > pos ? 'future' : e.i === pos ? 'current' : ''}>
-                <button type="button" onClick={() => goTo(e.i)}>
-                  <time>{e.time}</time> {e.text}
-                </button>
-              </li>
-            ))}
+            {[...entries].reverse().map((e) => {
+              // lucchetto e X sul primo messaggio mostrato di ogni condizione (una condizione può avere più messaggi)
+              const head = e.j === timeline[e.i].messages.length - 1;
+              return (
+                <li
+                  key={`${e.i}-${e.j}`}
+                  class={`${e.i > pos ? 'future' : e.i === pos ? 'current' : ''}${locked === e.i ? ' locked' : ''}`}
+                >
+                  <button type="button" class="log-text" onClick={() => goTo(e.i)}>
+                    <time>{e.time}</time> {e.text}
+                  </button>
+                  {head && (
+                    <span class="log-tools">
+                      <button
+                        type="button"
+                        class={`log-lock${locked === e.i ? ' on' : ''}`}
+                        aria-pressed={locked === e.i}
+                        aria-label={locked === e.i ? t('unlockStep') : t('lockStep')}
+                        title={locked === e.i ? t('unlockStep') : t('lockStep')}
+                        onClick={() => setLocked(locked === e.i ? null : e.i)}
+                      >
+                        <Icon d={locked === e.i ? LOCK : UNLOCK} size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        class="log-del"
+                        aria-label={t('deleteStep')}
+                        title={t('deleteStep')}
+                        disabled={timeline.length <= 1}
+                        onClick={() => askDelete(e.i)}
+                      >
+                        <Icon d={CROSS} size={12} />
+                      </button>
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         )}
         <div class="bar-row">
@@ -2122,6 +2196,42 @@ export function App() {
           );
         })()}
 
+      {confirmDelete !== null && (
+        <div class="sheet-backdrop" onClick={() => setConfirmDelete(null)}>
+          <section class="sheet choices-sheet" onClick={(e) => e.stopPropagation()}>
+            <h2>{t('deleteConfirmTitle')}</h2>
+            <p class="status">
+              «{timeline[confirmDelete]?.messages.join(' ') || '—'}»
+            </p>
+            <p class="status">{t('deleteConfirmText')}</p>
+            <label class="help-toggle">
+              <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk((e.target as HTMLInputElement).checked)} />
+              {t('dontAskAgain')}
+            </label>
+            <div class="actions">
+              <button
+                type="button"
+                class="primary danger-btn"
+                onClick={() => {
+                  if (dontAsk) {
+                    try {
+                      localStorage.setItem('noConfirmDelete', '1');
+                    } catch {}
+                  }
+                  deleteStep(confirmDelete);
+                  setConfirmDelete(null);
+                }}
+              >
+                {t('deleteBtn')}
+              </button>
+              <button type="button" class="secondary" onClick={() => setConfirmDelete(null)}>
+                {t('cancel')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {help && <Help onClose={() => toggleHelp(false)} />}
 
       {viewer && <CardViewer card={viewer} onClose={() => setViewer(null)} />}
@@ -2141,6 +2251,12 @@ export function App() {
             {share.url ? (
               <>
                 <p class="status">{t('shareHelp')}</p>
+                {locked !== null && timeline[locked] && (
+                  <p class="status locked-note">
+                    <Icon d={LOCK} size={14} />{' '}
+                    {tr('sharedFromLock', { msg: timeline[locked].messages[timeline[locked].messages.length - 1] ?? '—' })}
+                  </p>
+                )}
                 <label class="help-toggle">
                   <input
                     type="checkbox"
