@@ -431,28 +431,33 @@ export function App() {
     })[d];
 
   // ---- Giocatori ----
-  function addPlayer() {
-    if (g.players.length >= MAX_PLAYERS) return;
-    const p = ALL_PLAYERS[g.players.length];
-    commit({ ...g, players: [...g.players, p], passed: [] }, tr('logAddPlayer', { p }));
-  }
-  function removePlayer() {
-    if (g.players.length <= MIN_PLAYERS) return;
-    const gone = g.players[g.players.length - 1];
-    const reset = g.active === gone || g.priority === gone;
+  /** Numero di giocatori (2–4): si aggiungono o tolgono gli ultimi, con le loro carte. */
+  function setPlayerCount(n: number) {
+    n = Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, n));
+    if (n === g.players.length) return;
+    if (n > g.players.length) {
+      const added = ALL_PLAYERS.slice(g.players.length, n);
+      commit(
+        { ...g, players: ALL_PLAYERS.slice(0, n), passed: [] },
+        ...added.map((p) => tr('logAddPlayer', { p })),
+      );
+      return;
+    }
+    const gone = g.players.slice(n);
+    const reset = gone.includes(g.active) || (g.priority !== null && gone.includes(g.priority));
     commit(
       {
         ...g,
-        players: g.players.slice(0, -1),
-        objs: g.objs.filter((o) => o.controller !== gone && o.owner !== gone),
-        stack: g.stack.filter((x) => x.controller !== gone),
+        players: g.players.slice(0, n),
+        objs: g.objs.filter((o) => !gone.includes(o.controller) && !gone.includes(o.owner)),
+        stack: g.stack.filter((x) => !gone.includes(x.controller)),
         passed: [],
         active: reset ? 'A' : g.active,
         priority: g.resolving !== null ? null : reset ? 'A' : g.priority,
       },
-      tr('logRemovePlayer', { p: gone }),
+      ...gone.map((p) => tr('logRemovePlayer', { p })),
     );
-    setPanels((ps) => ps.filter((x) => x !== `gy:${gone}`));
+    setPanels((ps) => ps.filter((x) => !gone.some((p) => x.endsWith(`:${p}`))));
     setTargeting(null);
   }
   function changeActive(p: PlayerId) {
@@ -1318,13 +1323,19 @@ export function App() {
               </button>
             </>
           )}
-          <button type="button" onClick={removePlayer} disabled={g.players.length <= MIN_PLAYERS} aria-label={t('removePlayer')}>
-            −
-          </button>
-          <span>{g.players.length}</span>
-          <button type="button" onClick={addPlayer} disabled={g.players.length >= MAX_PLAYERS} aria-label={t('addPlayer')}>
-            +
-          </button>
+          <label class="players-select">
+            <span class="sr-only">{t('players')}</span>
+            <select
+              value={g.players.length}
+              onChange={(e) => setPlayerCount(Number((e.target as HTMLSelectElement).value))}
+            >
+              {[2, 3, 4].map((n) => (
+                <option key={n} value={n}>
+                  {t('players')} {n}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {narrow ? (
           <button

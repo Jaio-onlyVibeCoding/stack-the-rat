@@ -752,3 +752,5 @@ input { width: 100%; }
 .locked-note { display: flex; align-items: center; gap: 4px; color: var(--accent); }
 .danger-btn { background: var(--danger) !important; color: #fff !important; }
 .log-id { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; margin-inline-end: 4px; }
+.players-select select { min-height: 28px; padding: 0 6px; font-size: 14px; }
+@media (max-width: 699px), (max-height: 500px) { .players-select select { font-size: 13px; max-width: 112px; } }
