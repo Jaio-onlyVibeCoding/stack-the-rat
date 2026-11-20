@@ -703,3 +703,4 @@ input { width: 100%; }
 .zone-btn .icon { stroke-width: 2.2; }
 .zone-head .player-tag { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .panel-title small { color: var(--muted); font-weight: 400; }
+.perm.kami-flipped img { rotate: 180deg; }

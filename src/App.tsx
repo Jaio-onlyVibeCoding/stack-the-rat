@@ -76,6 +76,10 @@ const LIBRARY = 'M8 3h10a1 1 0 0 1 1 1v13M6 6h10a1 1 0 0 1 1 1v13H5V7a1 1 0 0 1 
 const HAND =
   'M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4.5a1.5 1.5 0 0 1 3 0V12M14 12V5.5a1.5 1.5 0 0 1 3 0V13M17 13V9.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1a6 6 0 0 1-5.2-3L4.2 15a1.5 1.5 0 0 1 2.6-1.5L8 15.5';
 const TOMBSTONE = 'M6 21V9.5a6 6 0 0 1 12 0V21M3.5 21h17M12 7.5v6M9.5 10h5';
+/** Retro standard delle carte di Magic (da Scryfall) */
+const CARD_BACK = 'https://backs.scryfall.io/normal/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg';
+const FLIP = 'M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4';
+const DUP = 'M8 8h11v13H8zM5 16V3h11';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -856,16 +860,53 @@ export function App() {
     } catch {}
   }
 
+  /** Immagine di una carta sul campo tenendo conto di "girata": retro, faccia posteriore o carta capovolta. */
+  const hasBackFace = (c: Card) => c.faces.filter((f) => f.image).length > 1;
+  const objImage = (o: CardObj) => {
+    if (!o.flipped || o.zone !== 'battlefield') return o.card.image;
+    if (hasBackFace(o.card)) return o.card.faces[1].image;
+    if (o.card.layout === 'flip') return o.card.image; // capovolta con la rotazione CSS
+    return CARD_BACK;
+  };
+
+  /** Gira la carta: bifronte → si trasforma; flip → capovolta di 180°; altre → a faccia in giù (CR 708). */
+  function flipObj(o: CardObj) {
+    const card = o.card.printedName;
+    const on = !o.flipped;
+    const key = hasBackFace(o.card)
+      ? on ? 'logTransform' : 'logTransformBack'
+      : o.card.layout === 'flip'
+        ? on ? 'logFlipKami' : 'logUnflipKami'
+        : on ? 'logFaceDown' : 'logFaceUp';
+    setObj(o, { flipped: on }, tr(key, { card }));
+  }
+  /** Duplica: un'altra copia della carta (non un token) entra sul campo, come se fosse aggiunta dalla ricerca. */
+  function duplicateObj(o: CardObj) {
+    commit(
+      { ...g, objs: [...g.objs, { uid: newUid(), card: o.card, owner: o.controller, controller: o.controller, zone: 'battlefield' }] },
+      tr('logDuplicateCard', { card: o.card.printedName, p: o.controller }),
+    );
+  }
+
   /** Carta sul campo, nel cimitero o in esilio, con il menu ⋯ */
   const renderTile = (o: CardObj, cls: string) => (
     <div
       key={o.uid}
-      {...objProps(objKey.of(o), `${cls}${o.tapped && o.zone === 'battlefield' ? ' tapped' : ''}`)}
+      {...objProps(
+        objKey.of(o),
+        `${cls}${o.tapped && o.zone === 'battlefield' ? ' tapped' : ''}${
+          o.flipped && o.zone === 'battlefield' && o.card.layout === 'flip' ? ' kami-flipped' : ''
+        }`,
+      )}
       style={{ '--pc': PLAYER_COLOR[o.owner] }}
-      onPointerDown={(e) => startDrag(e, { kind: 'obj', uid: o.uid, img: o.card.image })}
+      onPointerDown={(e) => startDrag(e, { kind: 'obj', uid: o.uid, img: objImage(o) })}
     >
-      {o.card.image ? (
-        <img src={o.card.image} alt={o.card.printedName} draggable={false} />
+      {objImage(o) ? (
+        <img
+          src={objImage(o)}
+          alt={objImage(o) === CARD_BACK ? `${o.card.printedName} (${t('faceDown')})` : o.card.printedName}
+          draggable={false}
+        />
       ) : (
         <span class="no-img">{o.card.printedName}</span>
       )}
@@ -1543,6 +1584,30 @@ export function App() {
                 }}
               >
                 <Icon d={TAP} size={16} /> {menuObj.tapped ? t('untap') : t('tap')}
+              </button>
+            )}
+            {menuObj.zone === 'battlefield' && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  flipObj(menuObj);
+                  setMenu(null);
+                }}
+              >
+                <Icon d={FLIP} size={16} /> {menuObj.flipped ? t('unflip') : t('flip')}
+              </button>
+            )}
+            {menuObj.zone === 'battlefield' && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  duplicateObj(menuObj);
+                  setMenu(null);
+                }}
+              >
+                <Icon d={DUP} size={16} /> {t('duplicateCard')}
               </button>
             )}
             <button

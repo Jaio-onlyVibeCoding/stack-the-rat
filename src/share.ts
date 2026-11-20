@@ -15,8 +15,8 @@ interface Shared {
   r: number | null;
   /** pila: [uid, idScryfall, proprietario, controllore, bersagli, tipo, testo abilità] */
   s: [number, string, PlayerId, PlayerId, string[], StackKind?, string?, Choices?, (0 | 1)?][];
-  /** carte: [uid, idScryfall, proprietario, controllore, zona, token, tappata, preparata] */
-  o: [number, string, PlayerId, PlayerId, Zone, 0 | 1, (0 | 1)?, (0 | 1)?][];
+  /** carte: [uid, idScryfall, proprietario, controllore, zona, token, tappata, preparata, girata] */
+  o: [number, string, PlayerId, PlayerId, Zone, 0 | 1, (0 | 1)?, (0 | 1)?, (0 | 1)?][];
   g: Record<string, string>;
   /** sottofase */
   st?: number;
@@ -46,7 +46,7 @@ export async function encodeGame(g: Game): Promise<string> {
     ps: g.passed,
     r: g.resolving,
     s: g.stack.map((x) => [x.uid, x.card.scryfallId, x.owner, x.controller, x.targets, x.kind, x.text, x.choices, x.copy ? 1 : 0]),
-    o: g.objs.map((o) => [o.uid, o.card.scryfallId, o.owner, o.controller, o.zone, o.token ? 1 : 0, o.tapped ? 1 : 0, o.prepared ? 1 : 0]),
+    o: g.objs.map((o) => [o.uid, o.card.scryfallId, o.owner, o.controller, o.zone, o.token ? 1 : 0, o.tapped ? 1 : 0, o.prepared ? 1 : 0, o.flipped ? 1 : 0]),
     g: g.gone,
     st: g.step,
   };
@@ -84,7 +84,7 @@ export async function decodeGame(code: string): Promise<Game> {
       })),
     objs: s.o
       .filter((x) => cards.has(x[1]))
-      .map(([uid, id, owner, controller, zone, token, tapped, prepared]) => ({
+      .map(([uid, id, owner, controller, zone, token, tapped, prepared, flipped]) => ({
         uid,
         card: cards.get(id)!,
         owner,
@@ -93,6 +93,7 @@ export async function decodeGame(code: string): Promise<Game> {
         token: token === 1,
         tapped: tapped === 1,
         prepared: prepared === 1,
+        flipped: flipped === 1,
       })),
   };
 }

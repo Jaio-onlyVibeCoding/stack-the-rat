@@ -30,6 +30,8 @@ export interface CardObj {
   tapped?: boolean;
   /** Preparato: può lanciare una copia della sua magia di preparazione */
   prepared?: boolean;
+  /** Girata: bifronte → retro (trasformata); flip → capovolta; altre → a faccia in giù */
+  flipped?: boolean;
 }
 
 /** Tipo di oggetto in pila: magia, abilità attivata (CR 602) o innescata (CR 603). */
