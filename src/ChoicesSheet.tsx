@@ -39,6 +39,7 @@ export function ChoicesSheet({
     if (sel.includes(i)) setCh({ ...ch, modes: sel.filter((m) => m !== i) });
     else if (maxModes === 1) setCh({ ...ch, modes: [i] });
     else if (sel.length < maxModes) setCh({ ...ch, modes: [...sel, i].sort((a, b) => a - b) });
+    else setCh({ ...ch }); // limite raggiunto: ridisegna per togliere la spunta appena messa
   }
   function toggleExtra(k: string) {
     const ex = ch.extras ?? [];
