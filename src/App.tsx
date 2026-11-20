@@ -1343,7 +1343,10 @@ export function App() {
                     {(it.copy || it.choices) && (
                       <div class="choice-chips">
                         {it.copy && <span class="chip-copy">{t('copyTag')}</span>}
-                        {it.copy && it.card.faces[1] && <span>{it.card.faces[1].printedName}</span>}
+                        {/* nome della magia preparata: solo per le copie di carte "prepara" (le altre lo hanno già nelle scelte) */}
+                        {it.copy && it.card.layout === 'prepare' && it.card.faces[1] && (
+                          <span>{it.card.faces[1].printedName}</span>
+                        )}
                         {summarize(it.card, it.choices, { mode: t('mode') }).map((c, k) => (
                           <span key={k}>{c}</span>
                         ))}
