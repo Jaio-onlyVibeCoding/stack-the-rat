@@ -38,6 +38,8 @@ interface RawCard extends RawFace {
   scryfall_uri: string;
   keywords?: string[];
   card_faces?: RawFace[];
+  /** missing, placeholder ("immagine non disponibile"), lowres, highres_scan */
+  image_status?: string;
 }
 
 /** Una faccia (o metà) di una carta con più parti: carta divisa, avventura, bifronte, preparazione. */
@@ -180,7 +182,8 @@ export async function getCard(name: string, scryLang: string): Promise<Card | nu
   // Stampa più leggibile: la più recente con cornice moderna (2015), bordo nero, testo vicino all'Oracle.
   // Escluse Secret Lair, promo, versioni speciali (showcase, borderless, full art), digitali e da collezione.
   // Ordine: moderna nella lingua scelta → moderna in inglese → normale (lingua, inglese) → qualsiasi.
-  const hasImg = (c: RawCard) => !!(c.image_uris || c.card_faces?.[0]?.image_uris);
+  const hasImg = (c: RawCard) =>
+    !!(c.image_uris || c.card_faces?.[0]?.image_uris) && c.image_status !== 'missing' && c.image_status !== 'placeholder';
   const base = '-is:promo -is:boosterfun -is:fullart -is:textless -is:oversized -st:memorabilia -st:token -st:funny';
   const tries = [`frame:2015 border:black -set:sld ${base}`, `-set:sld ${base}`, ''];
   outer: for (const extra of tries) {
