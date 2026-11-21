@@ -825,13 +825,13 @@ export const EXAMPLES: ExampleDef[] = [
     cards: { lattice: 'Mycosynth Lattice', march: 'March of the Machines', humility: 'Humility', forest: 'Forest' },
     build: (b) => {
       const art = s('Artifact', 'Artefatto');
-      b.perm('lattice', A).perm('humility', A).perm('forestA', A).perm('forestB', B).snap({
-        log: s('Setup: {lattice} and {humility} of A, a {forestA} each.', 'Situazione: {lattice} e {humility} di A, una {forestA} a testa.'),
+      b.perm('lattice', A).perm('humility', A).perm('forest1', A).perm('forest2', B).snap({
+        log: s('Setup: {lattice} and {humility} of A, a {forest1} each.', 'Situazione: {lattice} e {humility} di A, una {forest1} a testa.'),
         text: s(
           '{lattice}: all permanents are artifacts (L-4) and colorless (L-5). There are no creatures: {humility} does nothing yet.',
           '{lattice}: tutti i permanenti sono artefatti (L-4) e incolori (L-5). Non ci sono creature: {humility} per ora non fa niente.',
         ),
-        tags: { lattice: art, humility: art, forestA: art, forestB: art },
+        tags: { lattice: art, humility: art, forest1: art, forest2: art },
       });
       b.cast('march', A).snap({
         log: s('A casts {march}.', 'A lancia {march}.'),
@@ -839,7 +839,7 @@ export const EXAMPLES: ExampleDef[] = [
           'Each noncreature artifact will be an artifact creature with power and toughness equal to its mana value.',
           'Ogni artefatto non creatura sarà un artefatto creatura con forza e costituzione pari al suo valore di mana.',
         ),
-        tags: { lattice: art, humility: art, forestA: art, forestB: art },
+        tags: { lattice: art, humility: art, forest1: art, forest2: art },
       });
       b.resolve('march').snap({
         log: s('{march} resolves (newest timestamp).', '{march} si risolve (timestamp più recente).'),
@@ -853,10 +853,10 @@ export const EXAMPLES: ExampleDef[] = [
           r('L-6', '{humility}: no abilities', '{humility}: nessuna abilità'),
           r('L-7b', '{humility} 1/1 → {march} = mana value', '{humility} 1/1 → {march} = valore di mana'),
         ],
-        badges: { lattice: '6/6', march: '4/4', humility: '4/4', forestA: '0/0', forestB: '0/0' },
+        badges: { lattice: '6/6', march: '4/4', humility: '4/4', forest1: '0/0', forest2: '0/0' },
       });
-      b.bury('forestA').bury('forestB').snap({
-        log: s('The two {forestA} are put into the graveyard.', 'Le due {forestA} vanno al cimitero.'),
+      b.bury('forest1').bury('forest2').snap({
+        log: s('The two {forest1} are put into the graveyard.', 'Le due {forest1} vanno al cimitero.'),
         text: s(
           'Mana value 0: they are 0/0 creatures and die (704.5f). If {humility} had been the newest, everything would be 1/1 and the lands would survive.',
           'Valore di mana 0: sono creature 0/0 e muoiono (704.5f). Se {humility} fosse stata la più recente, tutto sarebbe 1/1 e le terre sopravviverebbero.',
