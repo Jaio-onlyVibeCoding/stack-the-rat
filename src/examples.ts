@@ -24,6 +24,8 @@ export interface StepInfo {
 }
 export interface ExampleDef {
   id: string;
+  /** numero mostrato nell'elenco: 1a, 1b, 2… */
+  num: string;
   title: L;
   sub: L;
   /** ref → nome inglese della carta */
@@ -146,9 +148,12 @@ export class Builder {
 
 /** Sostituisce {ref} con il nome stampato della carta. */
 export function fillCards(s: string, cards: Record<string, Card>): string {
-  return s.replace(/\{(\w+)\}/g, (m, ref: string) => {
+  // {ref} = nome della carta; {ref.0} / {ref.1} = nome di una faccia
+  return s.replace(/\{(\w+)(?:\.(\d))?\}/g, (m, ref: string, face?: string) => {
     const c = cards[ref] ?? cards[ref.replace(/\d+$/, '')];
-    return c ? c.printedName : m;
+    if (!c) return m;
+    if (face !== undefined) return c.faces[+face]?.printedName ?? c.printedName;
+    return c.printedName;
   });
 }
 export const pick = (x: L | string, lang: Lang) => (typeof x === 'string' ? x : x[lang] ?? x.en);
@@ -156,11 +161,17 @@ export const pick = (x: L | string, lang: Lang) => (typeof x === 'string' ? x : 
 const r = (l: string, en: string, it: string): LayerRow => ({ l, t: { en, it } });
 const s = (en: string, it: string): L => ({ en, it });
 
+const TITLE_1 = s('Static ability or spell/ability effect?', 'Abilità statica o effetto di una magia/abilità?');
+const TITLE_3 = s('Switching power and toughness is always last (L-7d)', 'Invertire forza e costituzione è sempre l’ultimo passo (L-7d)');
+const TITLE_4 = s('You can copy only copiable values (L-1a)', 'Puoi copiare solo i valori copiabili (L-1a)');
+const TITLE_9 = s('An effect that started does not stop (613.6, L-4, L-6, L-7b)', 'Un effetto già iniziato non si ferma (613.6, L-4, L-6, L-7b)');
+
 export const EXAMPLES: ExampleDef[] = [
   {
     id: 'static-vs-spell',
-    title: s('Static ability or spell effect?', 'Abilità statica o effetto di una magia?'),
-    sub: s('Glorious Anthem · Inspired Charge · Grizzly Bears (one before, one after) · Disenchant', 'Glorious Anthem · Inspired Charge · Grizzly Bears (uno prima, uno dopo) · Disenchant'),
+    num: '1a',
+    title: TITLE_1,
+    sub: s('Who is affected and for how long', 'Chi viene colpito e per quanto'),
     cards: { anthem: 'Glorious Anthem', charge: 'Inspired Charge', bear: 'Grizzly Bears', dis: 'Disenchant' },
     build: (b) => {
       b.perm('anthem', A).perm('bear1', A).snap({
@@ -218,9 +229,67 @@ export const EXAMPLES: ExampleDef[] = [
     },
   },
   {
+    id: 'same-layer',
+    num: '1b',
+    title: TITLE_1,
+    sub: s('Interaction in the same layer', 'Interazione nello stesso layer'),
+    cards: { humility: 'Humility', bear: 'Grizzly Bears', wings: 'Wings of Velis Vel' },
+    build: (b) => {
+      b.perm('humility1', A).perm('bear', A).snap({
+        log: s('Setup: {humility1} and {bear} of A.', 'Situazione: {humility1} e {bear} di A.'),
+        text: s(
+          '{humility1} has a static ability: all creatures lose all abilities and have base power and toughness 1/1 (L-6, L-7b).',
+          '{humility1} ha un’abilità statica: tutte le creature perdono le abilità e hanno forza e costituzione base 1/1 (L-6, L-7b).',
+        ),
+        rows: [r('L-7b', '{humility1}: base 1/1', '{humility1}: base 1/1')],
+        badges: { bear: '1/1' },
+      });
+      b.cast('wings', A, ['bear']).snap({
+        log: s('A casts {wings} targeting {bear}.', 'A lancia {wings} su {bear}.'),
+        text: s(
+          'Until end of turn: base power and toughness 4/4, all creature types, flying.',
+          'Fino alla fine del turno: forza e costituzione base 4/4, tutti i tipi di creatura, volare.',
+        ),
+        badges: { bear: '1/1' },
+      });
+      b.resolve('wings').snap({
+        log: s('{wings} resolves.', '{wings} si risolve.'),
+        text: s(
+          'Two effects that set power and toughness, both in L-7b: the timestamp decides. {humility1} has the timestamp of the permanent (613.7a), {wings} that of its resolution (613.7b): it is newer, so it applies after and wins. Same in L-6: {humility1} removes the abilities, then {wings} gives flying.',
+          'Due effetti che impostano forza e costituzione, entrambi nel L-7b: decide il timestamp. {humility1} ha il timestamp del permanente (613.7a), {wings} quello della risoluzione (613.7b): è più recente, quindi si applica dopo e vince. Lo stesso nel L-6: {humility1} toglie le abilità, poi {wings} dà volare.',
+        ),
+        rows: [
+          r('L-6', '{humility1}: no abilities → {wings}: flying', '{humility1}: nessuna abilità → {wings}: volare'),
+          r('L-7b', '{humility1} 1/1 → {wings} 4/4', '{humility1} 1/1 → {wings} 4/4'),
+        ],
+        badges: { bear: '4/4' },
+        tags: { bear: s('Flying', 'Volare') },
+      });
+      b.cast('humility2', B).snap({
+        log: s('B casts a second {humility2}.', 'B lancia una seconda {humility2}.'),
+        text: s('When it resolves it will have the newest timestamp.', 'Quando si risolve avrà il timestamp più recente.'),
+        badges: { bear: '4/4' },
+        tags: { bear: s('Flying', 'Volare') },
+      });
+      b.resolve('humility2').snap({
+        log: s('The second {humility2} resolves.', 'La seconda {humility2} si risolve.'),
+        text: s(
+          'Now the newest effect is the second {humility2}: in L-6 it removes flying, in L-7b it sets 1/1 after {wings}. The ruling of {wings} says it: it overwrites only the setting effects that existed before it resolved.',
+          'Ora l’effetto più recente è la seconda {humility2}: nel L-6 toglie volare, nel L-7b imposta 1/1 dopo {wings}. Lo dice il ruling di {wings}: sovrascrive solo gli effetti di impostazione che esistevano prima della sua risoluzione.',
+        ),
+        rows: [
+          r('L-6', '{humility1} → {wings}: flying → {humility2}: no abilities', '{humility1} → {wings}: volare → {humility2}: nessuna abilità'),
+          r('L-7b', '{humility1} 1/1 → {wings} 4/4 → {humility2} 1/1', '{humility1} 1/1 → {wings} 4/4 → {humility2} 1/1'),
+        ],
+        badges: { bear: '1/1' },
+      });
+    },
+  },
+  {
     id: 'set-modify',
+    num: '2',
     title: s('Setting and modifying power (L-7b, L-7c)', 'Impostare e modificare la forza (L-7b, L-7c)'),
-    sub: s('Turn to Frog · Grizzly Bears with two +1/+1 counters · Giant Growth', 'Turn to Frog · Grizzly Bears con due segnalini +1/+1 · Giant Growth'),
+    sub: s('', ''),
     cards: { frog: 'Turn to Frog', bear: 'Grizzly Bears', growth: 'Giant Growth' },
     build: (b) => {
       b.perm('bear', B, { counters: { '+1/+1': 2 } }).snap({
@@ -264,8 +333,9 @@ export const EXAMPLES: ExampleDef[] = [
   },
   {
     id: 'switch',
-    title: s('Switching power and toughness is always last (L-7d)', 'Invertire forza e costituzione è sempre l’ultimo passo (L-7d)'),
-    sub: s('Wall of Stone · Giant Growth · Inside Out · Brute Strength', 'Wall of Stone · Giant Growth · Inside Out · Brute Strength'),
+    num: '3a',
+    title: TITLE_3,
+    sub: s('The result you do not expect', 'Il risultato che non ti aspetti'),
     cards: { wall: 'Wall of Stone', growth: 'Giant Growth', inside: 'Inside Out', brute: 'Brute Strength' },
     build: (b) => {
       b.perm('wall', A).snap({
@@ -319,8 +389,9 @@ export const EXAMPLES: ExampleDef[] = [
   },
   {
     id: 'tifa',
-    title: s('Doubling after a switch: the bonus goes to toughness (L-7c, L-7d)', 'Raddoppiare dopo uno scambio: il bonus finisce nella costituzione (L-7c, L-7d)'),
-    sub: s('Tifa Lockhart · 3 Forest · Inside Out', 'Tifa Lockhart · 3 Forest · Inside Out'),
+    num: '3b',
+    title: TITLE_3,
+    sub: s('Another example', 'Un altro esempio'),
     cards: { tifa: 'Tifa Lockhart', forest: 'Forest', inside: 'Inside Out' },
     build: (b) => {
       const trig = s('Landfall — double the power of {tifa} until end of turn.', 'Terraferma — raddoppia la forza di {tifa} fino alla fine del turno.');
@@ -383,8 +454,9 @@ export const EXAMPLES: ExampleDef[] = [
   },
   {
     id: 'clone',
-    title: s('Copying: only copiable values (L-1a)', 'Copiare: solo i valori copiabili (L-1a)'),
-    sub: s('Clone · Grizzly Bears with Giant Growth and a +1/+1 counter', 'Clone · Grizzly Bears con Giant Growth e un segnalino +1/+1'),
+    num: '4a',
+    title: TITLE_4,
+    sub: s('The basics', 'Le basi'),
     cards: { clone: 'Clone', bear: 'Grizzly Bears', growth: 'Giant Growth' },
     build: (b) => {
       b.perm('bear', B, { counters: { '+1/+1': 1 } }).cast('growth', B, ['bear']).resolve('growth').snap({
@@ -411,9 +483,148 @@ export const EXAMPLES: ExampleDef[] = [
     },
   },
   {
+    id: 'clone-face-down',
+    num: '4b',
+    title: TITLE_4,
+    sub: s('Face-down cards', 'Carte a faccia in giù'),
+    cards: { angel: 'Exalted Angel', clone: 'Clone' },
+    build: (b) => {
+      b.perm('angel', B, { flipped: true }).snap({
+        log: s('Setup: {angel} of B, face down.', 'Situazione: {angel} di B, a faccia in giù.'),
+        text: s(
+          'Face down it is a 2/2 creature with no name, no text, no subtypes (708.2a, L-1b).',
+          'A faccia in giù è una creatura 2/2 senza nome, testo né sottotipi (708.2a, L-1b).',
+        ),
+        rows: [r('L-1b', 'Face down: 2/2, no name, no abilities', 'A faccia in giù: 2/2, senza nome né abilità')],
+        badges: { angel: '2/2' },
+      });
+      b.cast('clone', A).snap({
+        log: s('A casts {clone}.', 'A lancia {clone}.'),
+        text: s('As it enters, it will copy the face-down creature.', 'Entrando, copierà la creatura a faccia in giù.'),
+        badges: { angel: '2/2' },
+      });
+      b.resolve('clone').snap({
+        log: s('{clone} enters as a copy of the face-down creature.', '{clone} entra come copia della creatura a faccia in giù.'),
+        text: s(
+          'After L-1a and L-1b, the characteristics of an object are its copiable values (613.2c). The face-down status is part of them: {clone} becomes a 2/2 with no name and no abilities, but it is face up.',
+          'Dopo il L-1a e il L-1b, le caratteristiche di un oggetto sono i suoi valori copiabili (613.2c). Lo stato a faccia in giù ne fa parte: {clone} diventa un 2/2 senza nome né abilità, ma è a faccia in su.',
+        ),
+        rows: [r('L-1a', '{clone}: copy of a face-down 2/2', '{clone}: copia di un 2/2 a faccia in giù')],
+        badges: { angel: '2/2', clone: '2/2' },
+        tags: { clone: s('Copy: face-down 2/2', 'Copia: 2/2 a faccia in giù') },
+      });
+      b.set('angel', { flipped: false }).snap({
+        log: s('B turns {angel} face up.', 'B gira {angel} a faccia in su.'),
+        text: s(
+          'The copiable values of {angel} return to normal (708.8): 4/5 with flying and lifelink. {clone} does not change: its values were fixed when it entered.',
+          'I valori copiabili di {angel} tornano normali (708.8): 4/5 con volare e legame vitale. {clone} non cambia: i suoi valori sono stati fissati quando è entrato.',
+        ),
+        rows: [r('L-1a', '{clone}: still a 2/2 with no name', '{clone}: resta un 2/2 senza nome')],
+        badges: { angel: '4/5', clone: '2/2' },
+        tags: { clone: s('Copy: face-down 2/2', 'Copia: 2/2 a faccia in giù') },
+      });
+    },
+  },
+  {
+    id: 'clone-dfc',
+    num: '4c',
+    title: TITLE_4,
+    sub: s('Transformed double-faced cards', 'Carte bifronte trasformate'),
+    cards: { fable: 'Fable of the Mirror-Breaker // Reflection of Kiki-Jiki', clone: 'Clone' },
+    build: (b) => {
+      const lore = b.lang === 'it' ? 'Sapere' : 'Lore';
+      b.perm('fable', A, { counters: { [lore]: 2 } }).snap({
+        log: s('Setup: {fable.0} of A with two lore counters.', 'Situazione: {fable.0} di A con due segnalini sapere.'),
+        text: s(
+          'At the start of the precombat main phase A puts the third lore counter on it (703.4f).',
+          'All’inizio della fase principale pre-combattimento A ci mette il terzo segnalino sapere (703.4f).',
+        ),
+      });
+      b.set('fable', { counters: { [lore]: 3 } })
+        .trigger('ch3', 'fable', A, s('III — Exile this Saga, then return it to the battlefield transformed under your control.', 'III — Esilia questa Saga, poi rimettila sul campo di battaglia trasformata sotto il tuo controllo.'))
+        .snap({
+          log: s('Third lore counter: chapter III triggers.', 'Terzo segnalino sapere: si innesca il capitolo III.'),
+          text: s('The chapter ability is on the stack.', 'L’abilità del capitolo è in pila.'),
+        });
+      b.resolve('ch3').reenter('fable', { flipped: true }).snap({
+        log: s('Chapter III resolves: {fable.0} returns transformed.', 'Il capitolo III si risolve: {fable.0} torna trasformata.'),
+        text: s(
+          'Exiled and returned: it is a new object (400.7), with summoning sickness. It enters with the back face up: {fable.1}, a 2/2 Goblin Shaman enchantment creature.',
+          'Esiliata e tornata: è un nuovo oggetto (400.7), con debolezza da evocazione. Entra con il retro a faccia in su: {fable.1}, incantesimo creatura Goblin Sciamano 2/2.',
+        ),
+        badges: { fable: '2/2' },
+      });
+      b.cast('clone', A).snap({
+        log: s('A casts {clone}.', 'A lancia {clone}.'),
+        text: s('As it enters, it will copy {fable.1}.', 'Entrando, copierà {fable.1}.'),
+        badges: { fable: '2/2' },
+      });
+      b.resolve('clone').snap({
+        log: s('{clone} enters as a copy of {fable.1}.', '{clone} entra come copia di {fable.1}.'),
+        text: s(
+          'Copying a double-faced permanent uses only the face that is up (707.8): {clone} becomes {fable.1} 2/2 with its ability. But {clone} is not a double-faced card: it cannot transform, and if it leaves the battlefield it is {clone} again.',
+          'Copiando un permanente bifronte si usa solo la faccia a faccia in su (707.8): {clone} diventa {fable.1} 2/2 con la sua abilità. Ma {clone} non è una carta bifronte: non può trasformarsi, e se lascia il campo di battaglia torna {clone}.',
+        ),
+        rows: [r('L-1a', '{clone}: copy of {fable.1} (face up only)', '{clone}: copia di {fable.1} (solo la faccia in su)')],
+        badges: { fable: '2/2', clone: '2/2' },
+        tags: { clone: '{fable.1}' },
+      });
+    },
+  },
+  {
+    id: 'clone-mutate',
+    num: '4d',
+    title: TITLE_4,
+    sub: s('Mutated cards', 'Carte mutate'),
+    cards: { elves: 'Llanowar Elves', gem: 'Gemrazer', clone: 'Clone' },
+    build: (b) => {
+      b.perm('elves', A).snap({
+        log: s('Setup: {elves} of A.', 'Situazione: {elves} di A.'),
+        text: s('1/1 with "{T}: Add {G}".', '1/1 con "{T}: Aggiungi {G}".'),
+        badges: { elves: '1/1' },
+      });
+      b.cast('gem', A, ['elves']).snap({
+        log: s('A casts {gem} for its mutate cost, targeting {elves}.', 'A lancia {gem} con il costo di mutare, su {elves}.'),
+        text: s('Mutate targets (115.1e): there is an arrow.', 'Mutare bersaglia (115.1e): c’è la freccia.'),
+        badges: { elves: '1/1' },
+      });
+      b.resolve('gem');
+      // fusione: lo stesso oggetto di prima, con Gemrazer sopra (731)
+      const gemObj = b.g.objs.find((o) => o.uid === b.uid.gem)!;
+      b.g = { ...b.g, objs: b.g.objs.filter((o) => o.uid !== b.uid.gem) };
+      b.set('elves', { card: gemObj.card, under: [{ card: b.cards.elves, owner: A }] });
+      b.uid.gem = b.uid.elves;
+      b.snap({
+        log: s('{gem} mutates on top of {elves}.', '{gem} muta sopra {elves}.'),
+        text: s(
+          'It is the same object as before (731): it has the characteristics of {gem} on top (4/4, reach, trample) plus the abilities of {elves} under it. This change is a copiable effect (L-1a).',
+          'È lo stesso oggetto di prima (731): ha le caratteristiche di {gem} sopra (4/4, raggiungere, travolgere) più le abilità di {elves} sotto. Questa modifica è un effetto copiabile (L-1a).',
+        ),
+        rows: [r('L-1a', 'Merged: {gem} + abilities of {elves}', 'Fusione: {gem} + abilità di {elves}')],
+        badges: { gem: '4/4' },
+      });
+      b.cast('clone', A).snap({
+        log: s('A casts {clone}.', 'A lancia {clone}.'),
+        text: s('As it enters, it will copy the mutated creature.', 'Entrando, copierà la creatura mutata.'),
+        badges: { gem: '4/4' },
+      });
+      b.resolve('clone').snap({
+        log: s('{clone} enters as a copy of the mutated creature.', '{clone} entra come copia della creatura mutata.'),
+        text: s(
+          'The characteristics of the merged creature are copiable: {clone} is a {gem} 4/4 with reach, trample and "{T}: Add {G}". It also has "whenever this creature mutates", but it does not trigger: {clone} has not mutated.',
+          'Le caratteristiche della creatura mutata sono copiabili: {clone} è un {gem} 4/4 con raggiungere, travolgere e "{T}: Aggiungi {G}". Ha anche "ogniqualvolta questa creatura muta", ma non si innesca: {clone} non ha mutato.',
+        ),
+        rows: [r('L-1a', '{clone}: copy of {gem} + {elves}', '{clone}: copia di {gem} + {elves}')],
+        badges: { gem: '4/4', clone: '4/4' },
+        tags: { clone: '{gem} + {elves}' },
+      });
+    },
+  },
+  {
     id: 'face-down',
+    num: '5',
     title: s('Face down, then turned face up (L-1b)', 'A faccia in giù, poi girata (L-1b)'),
-    sub: s('Exalted Angel (morph) · Giant Growth', 'Exalted Angel (metamorfosi) · Giant Growth'),
+    sub: s('It is always the same object', 'È sempre lo stesso oggetto'),
     cards: { angel: 'Exalted Angel', growth: 'Giant Growth' },
     build: (b) => {
       b.perm('angel', A, { flipped: true }).snap({
@@ -445,36 +656,10 @@ export const EXAMPLES: ExampleDef[] = [
     },
   },
   {
-    id: 'control',
-    title: s('Changing control and boosts (L-2, L-7c)', 'Cambio di controllo e potenziamenti (L-2, L-7c)'),
-    sub: s("Threaten · Glorious Anthem · opponent's Grizzly Bears", "Threaten · Glorious Anthem · Grizzly Bears dell'avversario"),
-    cards: { threaten: 'Threaten', anthem: 'Glorious Anthem', bear: 'Grizzly Bears' },
-    build: (b) => {
-      b.perm('anthem', A).perm('bear', B, { tapped: true }).snap({
-        log: s('Setup: {anthem} of A, {bear} of B (tapped).', 'Situazione: {anthem} di A, {bear} di B (TAPpato).'),
-        text: s('{anthem} only boosts the creatures A controls.', '{anthem} potenzia solo le creature controllate da A.'),
-        badges: { bear: '2/2' },
-      });
-      b.cast('threaten', A, ['bear']).snap({
-        log: s('A casts {threaten} targeting {bear}.', 'A lancia {threaten} su {bear}.'),
-        text: s('Untap it, gain control of it and give it haste until end of turn.', 'La STAPpa, ne prende il controllo e le dà rapidità fino alla fine del turno.'),
-        badges: { bear: '2/2' },
-      });
-      b.resolve('threaten').set('bear', { controller: A, tapped: false }).snap({
-        log: s('{threaten} resolves: A gains control of {bear}.', '{threaten} si risolve: A prende il controllo di {bear}.'),
-        text: s(
-          'Control changes in L-2, before L-7c: now {anthem} boosts it too, 3/3. It has summoning sickness, because A has not controlled it continuously since the start of the turn (302.6), but haste lets it attack anyway (702.10).',
-          'Il controllo cambia nel L-2, prima del L-7c: ora anche {anthem} lo potenzia, 3/3. Ha debolezza da evocazione, perché A non lo controlla ininterrottamente dall’inizio del turno (302.6), ma la rapidità gli permette di attaccare lo stesso (702.10).',
-        ),
-        rows: [r('L-2', 'Controller: A', 'Controllore: A'), r('L-6', 'Haste', 'Rapidità'), r('L-7c', '{anthem} +1/+1', '{anthem} +1/+1')],
-        badges: { bear: '3/3' },
-      });
-    },
-  },
-  {
     id: 'deadpool',
-    title: s('Exchanging text boxes: "as enters" is not an ETB (L-3)', 'Scambiare i riquadri di testo: "entra come" non è un ETB (L-3)'),
-    sub: s('Deadpool, Trading Card · Elvish Visionary · Wall of Omens · Cloudshift', 'Deadpool, Trading Card · Elvish Visionary · Wall of Omens · Cloudshift'),
+    num: '6',
+    title: s('Deadpool, so many things in one card (L-3)', 'Deadpool, quante cose in una sola carta (L-3)'),
+    sub: s('It does not target, it is not an ETB but it is an ETB', 'Non bersaglia, non è ETB ma è ETB'),
     cards: { dead: 'Deadpool, Trading Card', vis: 'Elvish Visionary', wall: 'Wall of Omens', shift: 'Cloudshift' },
     build: (b) => {
       const draw = s('When this creature enters, draw a card.', 'Quando questa creatura entra, pesca una carta.');
@@ -547,8 +732,9 @@ export const EXAMPLES: ExampleDef[] = [
   },
   {
     id: 'dependency',
+    num: '7a',
     title: s('Dependency: Blood Moon and Urborg (L-4, 613.8)', 'Dipendenza: Blood Moon e Urborg (L-4, 613.8)'),
-    sub: s('Blood Moon · Urborg, Tomb of Yawgmoth · Island', 'Blood Moon · Urborg, Tomb of Yawgmoth · Island'),
+    sub: s('Dependencies in short', 'Le dipendenze in breve'),
     cards: { moon: 'Blood Moon', urborg: 'Urborg, Tomb of Yawgmoth', island: 'Island' },
     build: (b) => {
       b.perm('urborg', A).perm('island', B).snap({
@@ -577,9 +763,142 @@ export const EXAMPLES: ExampleDef[] = [
     },
   },
   {
+    id: 'dep-dryad',
+    num: '7b',
+    title: s('Dependency: Blood Moon, Urborg and Dryad (L-4, 613.8)', 'Dipendenza: Blood Moon, Urborg e la Driade (L-4, 613.8)'),
+    sub: s('Dependency and timestamp together', 'Dipendenza e timestamp insieme'),
+    cards: { urborg: 'Urborg, Tomb of Yawgmoth', dryad: 'Dryad of the Ilysian Grove', moon: 'Blood Moon', island: 'Island' },
+    build: (b) => {
+      const all = s('All basic types', 'Tutti i tipi base');
+      b.perm('urborg', A).perm('dryad1', A).perm('island', B).snap({
+        log: s('Setup: {urborg} and {dryad1} of A, {island} of B.', 'Situazione: {urborg} e {dryad1} di A, {island} di B.'),
+        text: s(
+          '{dryad1}: lands A controls are every basic land type. {urborg}: every land is also a Swamp. Both in L-4.',
+          '{dryad1}: le terre di A sono di tutti i tipi base. {urborg}: ogni terra è anche una Palude. Entrambi nel L-4.',
+        ),
+        tags: { urborg: all, island: s('Swamp', 'Palude') },
+      });
+      b.cast('moon', B).snap({
+        log: s('B casts {moon}.', 'B lancia {moon}.'),
+        text: s('It will be the newest effect.', 'Sarà l’effetto più recente.'),
+        tags: { urborg: all, island: s('Swamp', 'Palude') },
+      });
+      b.resolve('moon').snap({
+        log: s('{moon} resolves.', '{moon} si risolve.'),
+        text: s(
+          '{urborg} depends on {moon} (613.8): {moon} applies before it, and {urborg} loses its ability. Between {dryad1} and {moon} there is no dependency: the timestamp decides. {dryad1} is older, so it applies first; then {moon} sets the subtype to Mountain and the other land types are lost (305.7). {urborg} is only a Mountain.',
+          '{urborg} dipende da {moon} (613.8): {moon} si applica prima, e {urborg} perde l’abilità. Tra {dryad1} e {moon} non c’è dipendenza: decide il timestamp. {dryad1} è più vecchia, quindi si applica prima; poi {moon} imposta il sottotipo Montagna e gli altri tipi di terra si perdono (305.7). {urborg} è solo una Montagna.',
+        ),
+        rows: [
+          r('L-4', '1. {dryad1}: all basic types (oldest)', '1. {dryad1}: tutti i tipi base (più vecchia)'),
+          r('L-4', '2. {moon}: Mountain, no abilities', '2. {moon}: Montagna, senza abilità'),
+          r('L-4', '3. {urborg}: no longer has the ability', '3. {urborg}: non ha più l’abilità'),
+        ],
+        tags: { urborg: s('Mountain', 'Montagna') },
+      });
+      b.cast('dryad2', A).snap({
+        log: s('A casts a second {dryad2}.', 'A lancia una seconda {dryad2}.'),
+        text: s('It will be newer than {moon}.', 'Sarà più recente di {moon}.'),
+        tags: { urborg: s('Mountain', 'Montagna') },
+      });
+      b.resolve('dryad2').snap({
+        log: s('The second {dryad2} resolves.', 'La seconda {dryad2} si risolve.'),
+        text: s(
+          'Now one {dryad2} is newer than {moon}: it applies after it. {urborg} is a Mountain and also every basic land type, so it is a Swamp too. But its own ability stays lost: {moon} removed it. {island} of B is not affected by {dryad2}.',
+          'Ora una {dryad2} è più recente di {moon}: si applica dopo. {urborg} è una Montagna e anche di tutti i tipi base, quindi anche una Palude. Ma la sua abilità resta persa: l’ha tolta {moon}. {island} di B non è toccata da {dryad2}.',
+        ),
+        rows: [
+          r('L-4', '1. first {dryad1}', '1. prima {dryad1}'),
+          r('L-4', '2. {moon}: Mountain, no abilities', '2. {moon}: Montagna, senza abilità'),
+          r('L-4', '3. second {dryad2}: all basic types', '3. seconda {dryad2}: tutti i tipi base'),
+          r('L-4', '4. {urborg}: no ability', '4. {urborg}: nessuna abilità'),
+        ],
+        tags: { urborg: all },
+      });
+    },
+  },
+  {
+    id: 'dep-lattice',
+    num: '7c',
+    title: s('Dependency: Mycosynth Lattice, March of the Machines and Humility (L-4, L-6, L-7b)', 'Dipendenza: Mycosynth Lattice, March of the Machines e Humility (L-4, L-6, L-7b)'),
+    sub: s('When lands die', 'Quando le terre muoiono'),
+    cards: { lattice: 'Mycosynth Lattice', march: 'March of the Machines', humility: 'Humility', forest: 'Forest' },
+    build: (b) => {
+      const art = s('Artifact', 'Artefatto');
+      b.perm('lattice', A).perm('humility', A).perm('forestA', A).perm('forestB', B).snap({
+        log: s('Setup: {lattice} and {humility} of A, a {forestA} each.', 'Situazione: {lattice} e {humility} di A, una {forestA} a testa.'),
+        text: s(
+          '{lattice}: all permanents are artifacts (L-4) and colorless (L-5). There are no creatures: {humility} does nothing yet.',
+          '{lattice}: tutti i permanenti sono artefatti (L-4) e incolori (L-5). Non ci sono creature: {humility} per ora non fa niente.',
+        ),
+        tags: { lattice: art, humility: art, forestA: art, forestB: art },
+      });
+      b.cast('march', A).snap({
+        log: s('A casts {march}.', 'A lancia {march}.'),
+        text: s(
+          'Each noncreature artifact will be an artifact creature with power and toughness equal to its mana value.',
+          'Ogni artefatto non creatura sarà un artefatto creatura con forza e costituzione pari al suo valore di mana.',
+        ),
+        tags: { lattice: art, humility: art, forestA: art, forestB: art },
+      });
+      b.resolve('march').snap({
+        log: s('{march} resolves (newest timestamp).', '{march} si risolve (timestamp più recente).'),
+        text: s(
+          'L-4: {march} depends on {lattice}, which changes what it applies to (613.8a): {lattice} first, then {march}. Everything is an artifact creature. L-6: {humility} removes the abilities of all of them, itself included, but the effects of {lattice} and {march} started in L-4 and continue (613.6). L-7b: no dependency, the timestamp decides: {humility} 1/1, then {march} sets the mana value.',
+          'L-4: {march} dipende da {lattice}, che cambia a cosa si applica (613.8a): prima {lattice}, poi {march}. Tutto è un artefatto creatura. L-6: {humility} toglie le abilità a tutti, anche a sé stessa, ma gli effetti di {lattice} e {march} sono iniziati nel L-4 e continuano (613.6). L-7b: nessuna dipendenza, decide il timestamp: {humility} 1/1, poi {march} imposta il valore di mana.',
+        ),
+        rows: [
+          r('L-4', '{lattice} → {march} (dependency)', '{lattice} → {march} (dipendenza)'),
+          r('L-5', '{lattice}: colorless', '{lattice}: incolori'),
+          r('L-6', '{humility}: no abilities', '{humility}: nessuna abilità'),
+          r('L-7b', '{humility} 1/1 → {march} = mana value', '{humility} 1/1 → {march} = valore di mana'),
+        ],
+        badges: { lattice: '6/6', march: '4/4', humility: '4/4', forestA: '0/0', forestB: '0/0' },
+      });
+      b.bury('forestA').bury('forestB').snap({
+        log: s('The two {forestA} are put into the graveyard.', 'Le due {forestA} vanno al cimitero.'),
+        text: s(
+          'Mana value 0: they are 0/0 creatures and die (704.5f). If {humility} had been the newest, everything would be 1/1 and the lands would survive.',
+          'Valore di mana 0: sono creature 0/0 e muoiono (704.5f). Se {humility} fosse stata la più recente, tutto sarebbe 1/1 e le terre sopravviverebbero.',
+        ),
+        badges: { lattice: '6/6', march: '4/4', humility: '4/4' },
+      });
+    },
+  },
+  {
+    id: 'bello-banner',
+    num: '8',
+    title: s('Bello: an artifact becomes a creature and boosts itself (L-4, L-6, L-7b, L-7c)', 'Bello: un artefatto diventa creatura e si potenzia da solo (L-4, L-6, L-7b, L-7c)'),
+    sub: s('', ''),
+    cards: { bello: 'Bello, Bard of the Brambles', banner: "Vanquisher's Banner" },
+    build: (b) => {
+      b.active(B).perm('bello', A).perm('banner', A).snap({
+        log: s("B's turn: {bello} and {banner} (Elemental) of A.", 'Turno di B: {bello} e {banner} (Elementale) di A.'),
+        text: s("It is not A's turn: {banner} is just an artifact.", 'Non è il turno di A: {banner} è solo un artefatto.'),
+        tags: { banner: s('Elemental', 'Elementale') },
+      });
+      b.active(A).snap({
+        log: s("A's turn.", 'Turno di A.'),
+        text: s(
+          '{banner} (artifact, mana value 5) is a 4/4 Elemental creature with indestructible and haste. Its own "creatures of the chosen type get +1/+1" now applies to itself: 5/5.',
+          '{banner} (artefatto, valore di mana 5) è una creatura Elementale 4/4 con indistruttibile e rapidità. Il suo "le creature del tipo scelto prendono +1/+1" ora vale anche per sé: 5/5.',
+        ),
+        rows: [
+          r('L-4', '{bello}: {banner} is an Elemental creature', '{bello}: {banner} è una creatura Elementale'),
+          r('L-6', '{bello}: indestructible, haste, draw', '{bello}: indistruttibile, rapidità, pesca'),
+          r('L-7b', '{bello}: 4/4', '{bello}: 4/4'),
+          r('L-7c', '{banner}: +1/+1 (it is an Elemental creature)', '{banner}: +1/+1 (è una creatura Elementale)'),
+        ],
+        badges: { banner: '5/5' },
+        tags: { banner: s('Elemental', 'Elementale') },
+      });
+    },
+  },
+  {
     id: 'opalescence',
-    title: s('Opalescence and Humility (L-4, L-6, L-7b)', 'Opalescence e Humility (L-4, L-6, L-7b)'),
-    sub: s('Opalescence · Humility', 'Opalescence · Humility'),
+    num: '9a',
+    title: TITLE_9,
+    sub: s('Opalescence and Humility', 'Opalescence e Humility'),
     cards: { opal: 'Opalescence', humility: 'Humility' },
     build: (b) => {
       b.perm('humility', A).snap({
@@ -606,37 +925,10 @@ export const EXAMPLES: ExampleDef[] = [
     },
   },
   {
-    id: 'bello-banner',
-    title: s('Bello: an artifact becomes a creature and boosts itself (L-4, L-6, L-7b, L-7c)', 'Bello: un artefatto diventa creatura e si potenzia da solo (L-4, L-6, L-7b, L-7c)'),
-    sub: s("Bello, Bard of the Brambles · Vanquisher's Banner (chosen type: Elemental)", "Bello, Bard of the Brambles · Vanquisher's Banner (tipo scelto: Elementale)"),
-    cards: { bello: 'Bello, Bard of the Brambles', banner: "Vanquisher's Banner" },
-    build: (b) => {
-      b.active(B).perm('bello', A).perm('banner', A).snap({
-        log: s("B's turn: {bello} and {banner} (Elemental) of A.", 'Turno di B: {bello} e {banner} (Elementale) di A.'),
-        text: s("It is not A's turn: {banner} is just an artifact.", 'Non è il turno di A: {banner} è solo un artefatto.'),
-        tags: { banner: s('Elemental', 'Elementale') },
-      });
-      b.active(A).snap({
-        log: s("A's turn.", 'Turno di A.'),
-        text: s(
-          '{banner} (artifact, mana value 5) is a 4/4 Elemental creature with indestructible and haste. Its own "creatures of the chosen type get +1/+1" now applies to itself: 5/5.',
-          '{banner} (artefatto, valore di mana 5) è una creatura Elementale 4/4 con indistruttibile e rapidità. Il suo "le creature del tipo scelto prendono +1/+1" ora vale anche per sé: 5/5.',
-        ),
-        rows: [
-          r('L-4', '{bello}: {banner} is an Elemental creature', '{bello}: {banner} è una creatura Elementale'),
-          r('L-6', '{bello}: indestructible, haste, draw', '{bello}: indistruttibile, rapidità, pesca'),
-          r('L-7b', '{bello}: 4/4', '{bello}: 4/4'),
-          r('L-7c', '{banner}: +1/+1 (it is an Elemental creature)', '{banner}: +1/+1 (è una creatura Elementale)'),
-        ],
-        badges: { banner: '5/5' },
-        tags: { banner: s('Elemental', 'Elementale') },
-      });
-    },
-  },
-  {
     id: 'bello-humility',
-    title: s('Bello and Humility: an effect that started does not stop (613.6)', 'Bello e Humility: un effetto già iniziato non si ferma (613.6)'),
-    sub: s("Bello, Bard of the Brambles · Vanquisher's Banner · Humility of the opponent", "Bello, Bard of the Brambles · Vanquisher's Banner · Humility dell'avversario"),
+    num: '9b',
+    title: TITLE_9,
+    sub: s('Bello, Bard of the Brambles: let’s understand it', 'Bello, Bard of the Brambles: capiamolo'),
     cards: { bello: 'Bello, Bard of the Brambles', banner: "Vanquisher's Banner", humility: 'Humility' },
     build: (b) => {
       b.active(B).perm('bello', A).perm('banner', A).snap({

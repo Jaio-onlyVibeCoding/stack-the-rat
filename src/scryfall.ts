@@ -57,6 +57,8 @@ export interface Face {
   isPermanent: boolean;
   power?: string;
   toughness?: string;
+  /** riga del tipo inglese (Oracle) di questa faccia */
+  oracleType?: string;
 }
 
 export interface Card {
@@ -107,6 +109,7 @@ export function toCard(r: RawCard): Card {
     isPermanent: PERMANENT_TYPES.test(x.type_line ?? ''),
     power: x.power,
     toughness: x.toughness,
+    oracleType: x.type_line,
   }));
   // Nome stampato: per le carte con più facce lo ricostruiamo dalle facce
   const printedName =

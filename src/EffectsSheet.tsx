@@ -8,11 +8,16 @@ export function EffectsSheet({
   obj,
   onChange,
   onClose,
+  clip,
+  onCopy,
 }: {
   obj: CardObj;
   /** nuovo elenco degli effetti + messaggio per lo storico */
   onChange: (effects: Effect[], msg: string) => void;
   onClose: () => void;
+  /** effetto copiato (si può incollare su qualunque carta) */
+  clip: Effect | null;
+  onCopy: (e: Effect) => void;
 }) {
   const { t } = useI18n();
   const tr = (k: Key, v: Record<string, string>) => t(k).replace(/\{(\w+)\}/g, (m, x: string) => v[x] ?? m);
@@ -23,6 +28,10 @@ export function EffectsSheet({
   const [eot, setEot] = useState(true);
   const [p, setP] = useState('');
   const [tg, setTg] = useState('');
+  // L-7c: segno di forza e costituzione (+ di default)
+  const [pNeg, setPNeg] = useState(false);
+  const [tNeg, setTNeg] = useState(false);
+  const [copied, setCopied] = useState<number | null>(null);
   const card = obj.card.printedName;
   const res = computeLayers(obj);
 
@@ -37,19 +46,30 @@ export function EffectsSheet({
 
   function add(ev: Event) {
     ev.preventDefault();
-    const n = (s: string) => (s.trim() === '' || Number.isNaN(Number(s)) ? undefined : Number(s));
+    const n = (s: string, neg = false) => {
+      if (s.trim() === '' || Number.isNaN(Number(s))) return undefined;
+      const v = Math.abs(Number(s));
+      return layer === '7c' && neg ? -v : layer === '7c' ? v : Number(s);
+    };
     const e: Effect = {
       id: newUid(),
       layer,
       text: text.trim() || t(`layerName${layer}` as Key),
       source,
       eot: eot || undefined,
-      ...(numeric ? { p: n(p) ?? (layer === '7c' ? 0 : undefined), t: n(tg) ?? (layer === '7c' ? 0 : undefined) } : {}),
+      ...(numeric ? { p: n(p, pNeg) ?? (layer === '7c' ? 0 : undefined), t: n(tg, tNeg) ?? (layer === '7c' ? 0 : undefined) } : {}),
     };
     onChange([...effects, e], tr('logEffectAdd', { card, l: `L-${layer}`, e: label(e) }));
     setText('');
     setP('');
     setTg('');
+    setPNeg(false);
+    setTNeg(false);
+  }
+  function paste() {
+    if (!clip) return;
+    const e: Effect = { ...clip, id: newUid() };
+    onChange([...effects, e], tr('logEffectAdd', { card, l: `L-${e.layer}`, e: label(e) }));
   }
   function move(i: number, dir: -1 | 1) {
     const j = i + dir;
@@ -124,6 +144,18 @@ export function EffectsSheet({
                   <button type="button" aria-label={t('moveDown')} disabled={i === effects.length - 1} onClick={() => move(i, 1)}>
                     ↓
                   </button>
+                  <button
+                    type="button"
+                    class={copied === e.id ? 'on' : ''}
+                    aria-label={t('effectCopy')}
+                    title={t('effectCopy')}
+                    onClick={() => {
+                      onCopy(e);
+                      setCopied(e.id);
+                    }}
+                  >
+                    ⧉
+                  </button>
                   <button type="button" class="del" aria-label={t('remove')} onClick={() => remove(i)}>
                     ✕
                   </button>
@@ -156,14 +188,30 @@ export function EffectsSheet({
             />
             {numeric && (
               <div class="eff-pt">
-                <label>
-                  {t(layer === '7c' ? 'effectsPlusP' : 'effectsSetP')}
-                  <input type="number" inputMode="numeric" value={p} onInput={(e) => setP((e.target as HTMLInputElement).value)} />
-                </label>
-                <label>
-                  {t(layer === '7c' ? 'effectsPlusT' : 'effectsSetT')}
-                  <input type="number" inputMode="numeric" value={tg} onInput={(e) => setTg((e.target as HTMLInputElement).value)} />
-                </label>
+                {(
+                  [
+                    [p, setP, pNeg, setPNeg, layer === '7c' ? 'effectsPlusP' : 'effectsSetP'],
+                    [tg, setTg, tNeg, setTNeg, layer === '7c' ? 'effectsPlusT' : 'effectsSetT'],
+                  ] as const
+                ).map(([val, setVal, neg, setNeg, lbl]) => (
+                  <label key={lbl}>
+                    {t(lbl)}
+                    <span class="eff-num">
+                      {layer === '7c' && (
+                        <button type="button" class="sign" aria-label={neg ? '−' : '+'} onClick={() => setNeg(!neg)}>
+                          {neg ? '−' : '+'}
+                        </button>
+                      )}
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={layer === '7c' ? 0 : undefined}
+                        value={val}
+                        onInput={(e) => setVal((e.target as HTMLInputElement).value)}
+                      />
+                    </span>
+                  </label>
+                ))}
               </div>
             )}
             <div class="eff-toggles">
@@ -186,12 +234,17 @@ export function EffectsSheet({
                 {t('effectEot')}
               </label>
             </div>
-            <button type="submit" class="secondary">
+            <button type="submit" class="primary">
               {t('effectsAddBtn')}
             </button>
+            {clip && (
+              <button type="button" class="secondary paste" onClick={paste}>
+                ⧉ {t('effectPaste')}: L-{clip.layer} {label(clip)}
+              </button>
+            )}
           </fieldset>
         </form>
-        <button type="button" class="primary" onClick={onClose}>
+        <button type="button" class="close-btn" onClick={onClose}>
           {t('close')}
         </button>
       </section>

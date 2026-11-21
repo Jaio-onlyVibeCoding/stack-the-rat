@@ -30,6 +30,13 @@ const num = (s?: string) => {
 const isFaceDown = (o: CardObj) =>
   !!o.flipped && o.card.faces.filter((f) => f.image).length <= 1 && o.card.layout !== 'flip';
 
+/** La faccia visibile è una creatura (riga del tipo Oracle), oppure è a faccia in giù (2/2, CR 708.2a) */
+export function isCreature(o: CardObj): boolean {
+  if (isFaceDown(o)) return true;
+  const type = o.flipped && o.card.faces[1] ? o.card.faces[1].oracleType : o.card.faces[0]?.oracleType ?? o.card.oracleType;
+  return /\bCreature\b/.test(type ?? '');
+}
+
 /** Forza/costituzione stampate della faccia visibile (a faccia in giù: 2/2, CR 708.2a) */
 function printed(o: CardObj): { p?: string; t?: string } {
   if (isFaceDown(o)) return { p: '2', t: '2' };

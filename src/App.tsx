@@ -15,6 +15,7 @@ import {
   STEP,
   STEP_COUNT,
   type CardObj,
+  type Effect,
   type Destination,
   type Game,
   type PlayerId,
@@ -30,7 +31,7 @@ import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, t
 import { Help } from './Help';
 import { Tour, type TourStep } from './Tour';
 import { EffectsSheet } from './EffectsSheet';
-import { computeLayers } from './layers';
+import { computeLayers, isCreature } from './layers';
 import { EXAMPLES, buildExample, fillCards, pick, type BuiltStep, type ExampleDef } from './examples';
 import { StepPicker } from './StepPicker';
 import { CardViewer } from './CardViewer';
@@ -333,20 +334,8 @@ export function App() {
       return false;
     }
   });
-  /** spunta Layers: effetti continui inseriti a mano, ordinati e calcolati da STR */
-  const [layersOn, setLayersOn] = useState(() => {
-    try {
-      return localStorage.getItem('layers') === '1';
-    } catch {
-      return false;
-    }
-  });
-  function toggleLayers(on: boolean) {
-    setLayersOn(on);
-    try {
-      localStorage.setItem('layers', on ? '1' : '0');
-    } catch {}
-  }
+  /** effetto continuo copiato (copia/incolla tra carte) */
+  const [effectClip, setEffectClip] = useState<Effect | null>(null);
   const [effectsFor, setEffectsFor] = useState<number | null>(null);
   /** fine turno: finiscono gli effetti "fino alla fine del turno" (CR 514.2) */
   const endEot = (objs: CardObj[]) =>
@@ -433,7 +422,7 @@ export function App() {
     } catch {}
     setHelp(false);
     setPhases(false);
-    setLayersOn(false);
+    setEffectClip(null);
     setEffectsFor(null);
     setLang(detect());
   }
@@ -1280,13 +1269,15 @@ export function App() {
       </button>
       {o.token && <span class="token-tag">{t('token')}</span>}
       {exBadges[o.uid] !== undefined && o.zone === 'battlefield' && <span class="pt-badge">{pick(exBadges[o.uid], lang)}</span>}
-      {layersOn && exBadges[o.uid] === undefined && o.zone === 'battlefield' && (o.effects?.length || o.counters?.['+1/+1'] || o.counters?.['-1/-1'])
+      {exBadges[o.uid] === undefined && o.zone === 'battlefield'
         ? (() => {
+            // creature: etichetta F/C sempre; altri permanenti solo con un effetto L-7
             const r = computeLayers(o);
+            const show = r.pt && (isCreature(o) || o.effects?.some((e) => e.layer.startsWith('7')));
             const txt = (o.effects ?? []).filter((e) => !e.layer.startsWith('7')).map((e) => e.text);
             return (
               <>
-                {r.pt && <span class="pt-badge calc">{`${r.pt[0]}/${r.pt[1]}`}</span>}
+                {show && <span class="pt-badge">{`${r.pt![0]}/${r.pt![1]}`}</span>}
                 {txt.length > 0 && exTags[o.uid] === undefined && <span class="ex-tag">{txt.join(' · ')}</span>}
               </>
             );
@@ -1739,10 +1730,7 @@ export function App() {
               <input type="checkbox" checked={phases} onChange={(e) => togglePhases((e.target as HTMLInputElement).checked)} />
               {t('phases')}
             </label>
-            <label class="help-toggle" title={t('layersHelp')}>
-              <input type="checkbox" checked={layersOn} onChange={(e) => toggleLayers((e.target as HTMLInputElement).checked)} />
-              {t('layers')}
-            </label>
+
               </div>
             )}
             {phases && (
@@ -2004,8 +1992,9 @@ export function App() {
               {EXAMPLES.map((d) => (
                 <li key={d.id}>
                   <button type="button" class={ex?.def.id === d.id ? 'on' : ''} onClick={() => loadExample(d)}>
+                    <i class="ex-num">{d.num}</i>
                     <b>{pick(d.title, lang)}</b>
-                    <span>{pick(d.sub, lang)}</span>
+                    {pick(d.sub, lang) && <span>{pick(d.sub, lang)}</span>}
                   </button>
                 </li>
               ))}
@@ -2253,7 +2242,7 @@ export function App() {
                 <Icon d={COUNTER} size={16} /> {t('countersMenu')}
               </button>
             )}
-            {layersOn && menuObj.zone === 'battlefield' && (
+            {menuObj.zone === 'battlefield' && (
               <button
                 type="button"
                 role="menuitem"
@@ -2486,7 +2475,15 @@ export function App() {
         (() => {
           const eo = g.objs.find((x) => x.uid === effectsFor && x.zone === 'battlefield');
           if (!eo) return null;
-          return <EffectsSheet obj={eo} onChange={(effects, msg) => setObj(eo, { effects }, msg)} onClose={() => setEffectsFor(null)} />;
+          return (
+            <EffectsSheet
+              obj={eo}
+              onChange={(effects, msg) => setObj(eo, { effects }, msg)}
+              onClose={() => setEffectsFor(null)}
+              clip={effectClip}
+              onCopy={setEffectClip}
+            />
+          );
         })()}
 
       {counterFor !== null &&

@@ -821,12 +821,10 @@ input { width: 100%; }
 .ex-list ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: ex; }
 .ex-list li { counter-increment: ex; }
 .ex-list li button {
-  width: 100%; text-align: start; display: grid; gap: 2px; padding: 8px 10px 8px 34px; position: relative;
+  width: 100%; text-align: start; display: grid; gap: 2px; padding: 8px 10px 8px 38px; position: relative;
   background: var(--bg); color: inherit; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font: inherit;
 }
-.ex-list li button::before {
-  content: counter(ex); position: absolute; inset-inline-start: 10px; top: 8px; font-weight: 700; color: var(--accent);
-}
+.ex-list .ex-num { position: absolute; inset-inline-start: 8px; top: 8px; font-style: normal; font-weight: 700; color: var(--accent); }
 .ex-list li button.on { border-color: var(--accent); }
 .ex-list li b { font-size: 14px; }
 .ex-list li span { font-size: 12px; color: var(--muted); }
@@ -889,4 +887,17 @@ input { width: 100%; }
 }
 .eff-toggles .toggle.on { border-color: var(--accent); color: var(--accent); }
 .effects-form .secondary { margin-top: 0; }
-.pt-badge.calc { background: #f2c14e; }
+
+.eff-num { display: flex; gap: 4px; }
+.eff-num input { flex: 1; min-width: 0; }
+.eff-num .sign {
+  width: 36px; flex: none; border: 1px solid var(--accent); border-radius: 8px; background: none; color: var(--accent);
+  font-size: 18px; font-weight: 700; cursor: pointer;
+}
+.effects-list button.on { border-color: var(--accent); color: var(--accent); }
+.effects-form .primary { margin-top: 0; }
+.effects-form .paste { margin-top: 0; text-align: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.close-btn {
+  min-height: 44px; padding: 0 20px; border: 0; border-radius: 10px;
+  background: var(--danger); color: #fff; font-weight: 600; cursor: pointer;
+}
