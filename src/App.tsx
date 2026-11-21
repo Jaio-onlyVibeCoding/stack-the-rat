@@ -31,7 +31,7 @@ import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, t
 import { Help } from './Help';
 import { Tour, type TourStep } from './Tour';
 import { EffectsSheet } from './EffectsSheet';
-import { computeLayers, isCreature } from './layers';
+import { computeLayers } from './layers';
 import { EXAMPLES, buildExample, fillCards, pick, type BuiltStep, type ExampleDef } from './examples';
 import { StepPicker } from './StepPicker';
 import { CardViewer } from './CardViewer';
@@ -337,6 +337,8 @@ export function App() {
   /** effetto continuo copiato (copia/incolla tra carte) */
   const [effectClip, setEffectClip] = useState<Effect | null>(null);
   const [effectsFor, setEffectsFor] = useState<number | null>(null);
+  /** menu "Imposta F/C": uid dell'oggetto e valori nei campi */
+  const [ptFor, setPtFor] = useState<{ uid: number; p: string; t: string; eot: boolean } | null>(null);
   /** fine turno: finiscono gli effetti "fino alla fine del turno" (CR 514.2) */
   const endEot = (objs: CardObj[]) =>
     objs.map((o) => (o.effects?.some((e) => e.eot) ? { ...o, effects: o.effects.filter((e) => !e.eot) } : o));
@@ -1273,7 +1275,8 @@ export function App() {
         ? (() => {
             // creature: etichetta F/C sempre; altri permanenti solo con un effetto L-7
             const r = computeLayers(o);
-            const show = r.pt && (isCreature(o) || o.effects?.some((e) => e.layer.startsWith('7')));
+            // creature, carte con F/C stampate (es. Veicoli) o con un effetto che imposta F/C
+            const show = !!r.pt;
             const txt = (o.effects ?? []).filter((e) => !e.layer.startsWith('7')).map((e) => e.text);
             return (
               <>
@@ -2254,6 +2257,19 @@ export function App() {
                 <Icon d={LAYERS} size={16} /> {t('effectsMenu')}
               </button>
             )}
+            {menuObj.zone === 'battlefield' && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  const r = computeLayers(menuObj);
+                  setPtFor({ uid: menuObj.uid, p: r.pt ? String(r.pt[0]) : '', t: r.pt ? String(r.pt[1]) : '', eot: false });
+                  setMenu(null);
+                }}
+              >
+                <Icon d={LAYERS} size={16} /> {t('setPt')}
+              </button>
+            )}
             {menuObj.zone === 'exile' && (
               <button
                 type="button"
@@ -2470,6 +2486,49 @@ export function App() {
           </section>
         </div>
       )}
+
+      {ptFor !== null &&
+        (() => {
+          const po = g.objs.find((x) => x.uid === ptFor.uid && x.zone === 'battlefield');
+          if (!po) return null;
+          const save = (ev: Event) => {
+            ev.preventDefault();
+            const p = parseInt(ptFor.p, 10);
+            const tt = parseInt(ptFor.t, 10);
+            if (Number.isNaN(p) || Number.isNaN(tt)) return;
+            const e: Effect = { id: newUid(), layer: '7b', text: t('setPtEffect'), source: 'spell', p, t: tt, manual: true, eot: ptFor.eot || undefined };
+            setObj(po, { effects: [...(po.effects ?? []).filter((x) => !x.manual), e] }, tr('logSetPt', { card: po.card.printedName, pt: `${p}/${tt}` }));
+            setPtFor(null);
+          };
+          return (
+            <div class="sheet-backdrop" onClick={() => setPtFor(null)}>
+              <form class="sheet choices-sheet effects-sheet" onClick={(e) => e.stopPropagation()} onSubmit={save}>
+                <h2>{tr('setPtTitle', { card: po.card.printedName })}</h2>
+                <div class="eff-pt">
+                  <label>
+                    {t('effectsSetP')}
+                    <input type="number" inputMode="numeric" value={ptFor.p} onInput={(e) => setPtFor({ ...ptFor, p: (e.target as HTMLInputElement).value })} />
+                  </label>
+                  <label>
+                    {t('effectsSetT')}
+                    <input type="number" inputMode="numeric" value={ptFor.t} onInput={(e) => setPtFor({ ...ptFor, t: (e.target as HTMLInputElement).value })} />
+                  </label>
+                </div>
+                <label class="help-toggle">
+                  <input type="checkbox" checked={ptFor.eot} onChange={(e) => setPtFor({ ...ptFor, eot: (e.target as HTMLInputElement).checked })} />
+                  {t('effectEot')}
+                </label>
+                <p class="muted small">{t('setPtHint')}</p>
+                <button type="submit" class="primary">
+                  {t('setPt')}
+                </button>
+                <button type="button" class="close-btn" onClick={() => setPtFor(null)}>
+                  {t('close')}
+                </button>
+              </form>
+            </div>
+          );
+        })()}
 
       {effectsFor !== null &&
         (() => {

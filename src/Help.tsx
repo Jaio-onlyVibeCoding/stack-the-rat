@@ -19,7 +19,7 @@ function Section({ title, open, onToggle, children }: { title: string; open: boo
 /** Finestra di aiuto: lancio di magie e abilità, APNAP, combattimento, link alle regole. */
 export function Help({ onClose, onExamples }: { onClose: () => void; onExamples?: () => void }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState<Record<string, boolean>>({ cast: true, apnap: false, combat: false, layers: false });
+  const [open, setOpen] = useState<Record<string, boolean>>({ cast: false, apnap: false, combat: false, layers: false });
   const toggle = (k: string) => setOpen({ ...open, [k]: !open[k] });
   const steps = (k: Key) => t(k).split('|');
   const letters = 'abcdefghi';

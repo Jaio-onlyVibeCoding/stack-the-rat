@@ -35,6 +35,8 @@ export interface Effect {
   /** L-7a/7b: imposta; L-7c: modifica */
   p?: number;
   t?: number;
+  /** impostata a mano dal menu "Imposta F/C" (una sola per oggetto) */
+  manual?: boolean;
 }
 
 export interface CardObj {
