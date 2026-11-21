@@ -354,7 +354,7 @@ export function App() {
     setNotice(t('exLoading'));
     try {
       const l = langInfo(lang).scryfall;
-      const built = await buildExample(def, (name) => getCard(name, l));
+      const built = await buildExample(def, (name) => getCard(name, l), lang);
       setTimeline(
         built.steps.map((st) => ({ game: st.game, messages: [fillCards(pick(st.info.log, lang), built.cards)], time: now() })),
       );
@@ -362,7 +362,10 @@ export function App() {
       setLocked(null);
       setTargeting(null);
       setPanels([]);
-      setCollapsed([]);
+      // campi di battaglia che l'esempio non usa: chiusi
+      setCollapsed(
+        built.steps[0].game.players.filter((p) => !built.steps.some((st) => st.game.objs.some((o) => o.zone === 'battlefield' && o.controller === p))),
+      );
       setMenu(null);
       setChoicesFor(null);
       setShowExamples(false);
@@ -1443,7 +1446,7 @@ export function App() {
           {!narrow && (
             <>
               <button type="button" class={`text-btn${exListOpen ? ' on' : ''}`} onClick={() => setExListOpen(true)}>
-                <Icon d={LAYERS} size={14} />
+                <Icon d={LAYERS} size={17} />
                 {t('examples')}
               </button>
               {document.fullscreenEnabled && (
@@ -1979,6 +1982,11 @@ export function App() {
                 <p>{t('exFree')}</p>
               ) : (
                 <>
+                  {exIdx < ex.steps.length - 1 && (
+                    <p class="ex-hint">
+                      <Icon d={FORWARD} size={14} /> {t('exHint')}
+                    </p>
+                  )}
                   <p>{fillCards(pick(ex.steps[exIdx].info.text, lang), ex.cards)}</p>
                   {ex.steps[exIdx].info.rows && (
                     <table class="ex-layers">

@@ -44,7 +44,7 @@ export class Builder {
   steps: BuiltStep[] = [];
   /** ref → uid attuale (cambia quando l'oggetto cambia zona) */
   uid: Record<string, number> = {};
-  constructor(public cards: Record<string, Card>) {}
+  constructor(public cards: Record<string, Card>, public lang: Lang) {}
 
   private card(ref: string): Card {
     const key = ref.replace(/\d+$/, '');
@@ -90,8 +90,8 @@ export class Builder {
     return this;
   }
   /** abilità innescata: ref è il nome dell'oggetto nello storico, source la carta che la genera */
-  trigger(ref: string, source: string, p: PlayerId, text: string) {
-    this.push(ref, { card: this.card(source), owner: p, controller: p, targets: [], kind: 'triggered', text });
+  trigger(ref: string, source: string, p: PlayerId, text: L) {
+    this.push(ref, { card: this.card(source), owner: p, controller: p, targets: [], kind: 'triggered', text: fillCards(pick(text, this.lang), this.cards) });
     return this;
   }
   /** risolve l'oggetto in cima: un permanente entra sul campo, una magia va al cimitero, un'abilità cessa di esistere */
@@ -141,8 +141,8 @@ export const EXAMPLES: ExampleDef[] = [
   {
     id: 'static-vs-spell',
     title: s('Static ability or spell effect?', 'Abilità statica o effetto di una magia?'),
-    sub: s('Glorious Anthem · Inspired Charge · Grizzly Bears (one before, one after)', 'Glorious Anthem · Inspired Charge · Grizzly Bears (uno prima, uno dopo)'),
-    cards: { anthem: 'Glorious Anthem', charge: 'Inspired Charge', bear: 'Grizzly Bears' },
+    sub: s('Glorious Anthem · Inspired Charge · Grizzly Bears (one before, one after) · Disenchant', 'Glorious Anthem · Inspired Charge · Grizzly Bears (uno prima, uno dopo) · Disenchant'),
+    cards: { anthem: 'Glorious Anthem', charge: 'Inspired Charge', bear: 'Grizzly Bears', dis: 'Disenchant' },
     build: (b) => {
       b.perm('anthem', A).perm('bear1', A).snap({
         log: s('Setup: {anthem} and {bear1}.', 'Situazione: {anthem} e {bear1}.'),
@@ -150,7 +150,7 @@ export const EXAMPLES: ExampleDef[] = [
           '{anthem} has a static ability: your creatures get +1/+1 as long as it is on the battlefield (CR 604). The affected group is checked continuously (611.3a).',
           "{anthem} ha un'abilità statica: le tue creature prendono +1/+1 finché è sul campo (CR 604). Il gruppo colpito si controlla in ogni momento (611.3a).",
         ),
-        rows: [r('7c', '{anthem}: +1/+1 (static ability)', '{anthem}: +1/+1 (abilità statica)')],
+        rows: [r('L7c', '{anthem}: +1/+1 (static ability)', '{anthem}: +1/+1 (abilità statica)')],
         badges: { bear1: '3/3' },
       });
       b.cast('charge', A).snap({
@@ -165,8 +165,8 @@ export const EXAMPLES: ExampleDef[] = [
           'Crea un effetto continuo fino alla fine del turno. Il gruppo colpito si fissa adesso: solo le creature che controlli in questo momento (611.2c).',
         ),
         rows: [
-          r('7c', '{anthem}: +1/+1 (static, timestamp of the permanent, 613.7a)', '{anthem}: +1/+1 (statica, timestamp del permanente, 613.7a)'),
-          r('7c', '{charge}: +2/+1 (resolved, timestamp of resolution, 613.7b)', '{charge}: +2/+1 (risolta, timestamp della risoluzione, 613.7b)'),
+          r('L7c', '{anthem}: +1/+1 (static, timestamp of the permanent, 613.7a)', '{anthem}: +1/+1 (statica, timestamp del permanente, 613.7a)'),
+          r('L7c', '{charge}: +2/+1 (resolved, timestamp of resolution, 613.7b)', '{charge}: +2/+1 (risolta, timestamp della risoluzione, 613.7b)'),
         ],
         badges: { bear1: '5/4' },
       });
@@ -176,30 +176,38 @@ export const EXAMPLES: ExampleDef[] = [
           "The new {bear2} gets the {anthem} bonus (static ability), but not the {charge} bonus: it wasn't there when the spell resolved.",
           'Il nuovo {bear2} prende il bonus di {anthem} (abilità statica), ma non quello di {charge}: non c’era quando la magia si è risolta.',
         ),
-        rows: [r('7c', 'Second {bear2}: only {anthem} +1/+1', 'Secondo {bear2}: solo {anthem} +1/+1')],
+        rows: [r('L7c', 'Second {bear2}: only {anthem} +1/+1', 'Secondo {bear2}: solo {anthem} +1/+1')],
         badges: { bear1: '5/4', bear2: '3/3' },
       });
-      b.bury('anthem').snap({
-        log: s('{anthem} goes to the graveyard.', '{anthem} va al cimitero.'),
+      b.cast('dis', B, ['anthem']).snap({
+        log: s('B casts {dis} targeting {anthem}.', 'B lancia {dis} su {anthem}.'),
+        text: s('{dis} will destroy {anthem}.', '{dis} distruggerà {anthem}.'),
+        badges: { bear1: '5/4', bear2: '3/3' },
+      });
+      b.resolve('dis').bury('anthem').snap({
+        log: s('{dis} resolves: {anthem} is destroyed.', '{dis} si risolve: {anthem} viene distrutto.'),
         text: s(
-          'The static ability stops immediately. The effect of {charge} lasts until end of turn.',
-          "L'abilità statica smette subito di funzionare. L'effetto di {charge} dura fino alla fine del turno.",
+          'Without {anthem} its static ability stops immediately: both creatures lose its +1/+1. The {charge} effect stays until end of turn, but only on the first {bear1}.',
+          'Senza {anthem} la sua abilità statica smette subito di funzionare: entrambe le creature perdono il suo +1/+1. L’effetto di {charge} resta fino alla fine del turno, ma solo sul primo {bear1}.',
         ),
-        rows: [r('7c', 'First {bear1}: {charge} +2/+1', 'Primo {bear1}: {charge} +2/+1')],
+        rows: [
+          r('L7c', 'First {bear1}: {charge} +2/+1 → 4/3', 'Primo {bear1}: {charge} +2/+1 → 4/3'),
+          r('L7c', 'Second {bear2}: nothing → 2/2', 'Secondo {bear2}: niente → 2/2'),
+        ],
         badges: { bear1: '4/3', bear2: '2/2' },
       });
     },
   },
   {
     id: 'set-modify',
-    title: s('Setting and modifying power (7b, 7c)', 'Impostare e modificare la forza (7b, 7c)'),
+    title: s('Setting and modifying power (L7b, L7c)', 'Impostare e modificare la forza (L7b, L7c)'),
     sub: s('Turn to Frog · Grizzly Bears with two +1/+1 counters · Giant Growth', 'Turn to Frog · Grizzly Bears con due segnalini +1/+1 · Giant Growth'),
     cards: { frog: 'Turn to Frog', bear: 'Grizzly Bears', growth: 'Giant Growth' },
     build: (b) => {
       b.perm('bear', B, { counters: { '+1/+1': 2 } }).snap({
         log: s('Setup: {bear} of B with two +1/+1 counters.', 'Situazione: {bear} di B con due segnalini +1/+1.'),
-        text: s('2/2 printed, counters +2/+2 (7c).', '2/2 stampato, segnalini +2/+2 (7c).'),
-        rows: [r('7c', 'Counters +2/+2', 'Segnalini +2/+2')],
+        text: s('2/2 base, 2× +1/+1 counters (L7c): 4/4.', '2/2 base, 2× segnalini +1/+1 (L7c): 4/4.'),
+        rows: [r('L7c', '2× +1/+1 counters', '2× segnalini +1/+1')],
         badges: { bear: '4/4' },
       });
       b.cast('frog', A, ['bear']).snap({
@@ -214,22 +222,22 @@ export const EXAMPLES: ExampleDef[] = [
       });
       b.resolve('growth').snap({
         log: s('{growth} resolves.', '{growth} si risolve.'),
-        text: s('+3/+3 until end of turn (7c).', '+3/+3 fino alla fine del turno (7c).'),
-        rows: [r('7c', 'Counters +2/+2', 'Segnalini +2/+2'), r('7c', '{growth} +3/+3', '{growth} +3/+3')],
+        text: s('+3/+3 until end of turn (L7c): 7/7.', '+3/+3 fino alla fine del turno (L7c): 7/7.'),
+        rows: [r('L7c', '2× +1/+1 counters, {growth} +3/+3', '2× segnalini +1/+1, {growth} +3/+3')],
         badges: { bear: '7/7' },
       });
       b.resolve('frog').snap({
         log: s('{frog} resolves.', '{frog} si risolve.'),
         text: s(
-          '{frog} resolved later, but "becomes 1/1" is applied in 7b, before all the modifications in 7c. {growth} is not cancelled: 1/1 +2/+2 +3/+3 = 6/6.',
-          '{frog} si è risolta dopo, ma "diventa 1/1" si applica nel 7b, prima di tutte le modifiche del 7c. {growth} non viene cancellata: 1/1 +2/+2 +3/+3 = 6/6.',
+          '{frog} resolved later, but "becomes 1/1" is applied in L7b, before all the modifications in L7c. {growth} is not cancelled: 1/1 +2/+2 +3/+3 = 6/6.',
+          '{frog} si è risolta dopo, ma "diventa 1/1" si applica nel L7b, prima di tutte le modifiche del L7c. {growth} non viene cancellata: 1/1 +2/+2 +3/+3 = 6/6.',
         ),
         rows: [
-          r('4', 'Frog (loses creature type Bear)', 'Rana (perde il tipo Orso)'),
-          r('5', 'Blue', 'Blu'),
-          r('6', 'Loses all abilities', 'Perde tutte le abilità'),
-          r('7b', '{frog}: base 1/1', '{frog}: base 1/1'),
-          r('7c', 'Counters +2/+2, {growth} +3/+3', 'Segnalini +2/+2, {growth} +3/+3'),
+          r('L4', 'Frog (loses creature type Bear)', 'Rana (perde il tipo Orso)'),
+          r('L5', 'Blue', 'Blu'),
+          r('L6', 'Loses all abilities', 'Perde tutte le abilità'),
+          r('L7b', '{frog}: base 1/1', '{frog}: base 1/1'),
+          r('L7c', '2× +1/+1 counters, {growth} +3/+3', '2× segnalini +1/+1, {growth} +3/+3'),
         ],
         badges: { bear: '6/6' },
       });
@@ -237,105 +245,133 @@ export const EXAMPLES: ExampleDef[] = [
   },
   {
     id: 'switch',
-    title: s('Switching power and toughness is always last (7d)', 'Invertire forza e costituzione è sempre l’ultimo passo (7d)'),
-    sub: s('Wall of Stone · Giant Growth ×2 · Inside Out', 'Wall of Stone · Giant Growth ×2 · Inside Out'),
-    cards: { wall: 'Wall of Stone', growth: 'Giant Growth', inside: 'Inside Out' },
+    title: s('Switching power and toughness is always last (L7d)', 'Invertire forza e costituzione è sempre l’ultimo passo (L7d)'),
+    sub: s('Wall of Stone · Giant Growth · Inside Out · Brute Strength', 'Wall of Stone · Giant Growth · Inside Out · Brute Strength'),
+    cards: { wall: 'Wall of Stone', growth: 'Giant Growth', inside: 'Inside Out', brute: 'Brute Strength' },
     build: (b) => {
       b.perm('wall', A).snap({
         log: s('Setup: {wall} (0/8).', 'Situazione: {wall} (0/8).'),
         text: s(
-          'If {inside} resolved now, {wall} would be 8/0 and would die (704.5f). So {growth} first.',
-          'Se {inside} si risolvesse adesso, {wall} sarebbe 8/0 e morirebbe (704.5f). Quindi prima {growth}.',
+          'We start with {growth}: if {inside} came first, {wall} would become 8/0 and die (toughness 0, 704.5f).',
+          'Si parte con {growth}: se arrivasse prima {inside}, {wall} diventerebbe 8/0 e morirebbe (costituzione 0, 704.5f).',
         ),
         badges: { wall: '0/8' },
       });
-      b.cast('growth1', A, ['wall']).resolve('growth1').snap({
-        log: s('{growth} resolves on {wall}.', '{growth} si risolve su {wall}.'),
-        text: s('0/8 +3/+3 = 3/11 (7c).', '0/8 +3/+3 = 3/11 (7c).'),
-        rows: [r('7c', '{growth} +3/+3', '{growth} +3/+3')],
+      b.cast('growth', A, ['wall']).snap({
+        log: s('A casts {growth} targeting {wall}.', 'A lancia {growth} su {wall}.'),
+        text: s('+3/+3 until end of turn, when it resolves.', '+3/+3 fino alla fine del turno, quando si risolve.'),
+        badges: { wall: '0/8' },
+      });
+      b.resolve('growth').snap({
+        log: s('{growth} resolves.', '{growth} si risolve.'),
+        text: s('0/8 +3/+3 = 3/11 (L7c).', '0/8 +3/+3 = 3/11 (L7c).'),
+        rows: [r('L7c', '{growth} +3/+3 → 3/11', '{growth} +3/+3 → 3/11')],
         badges: { wall: '3/11' },
       });
-      b.cast('inside', A, ['wall']).resolve('inside').snap({
-        log: s('{inside} resolves on {wall}.', '{inside} si risolve su {wall}.'),
-        text: s('The switch is applied after everything else (7d): 3/11 → 11/3.', 'Lo scambio si applica dopo tutto il resto (7d): 3/11 → 11/3.'),
-        rows: [r('7c', '{growth} +3/+3 → 3/11', '{growth} +3/+3 → 3/11'), r('7d', '{inside}: switch → 11/3', '{inside}: scambio → 11/3')],
+      b.cast('inside', A, ['wall']).snap({
+        log: s('A casts {inside} targeting {wall}.', 'A lancia {inside} su {wall}.'),
+        text: s('It will switch power and toughness until end of turn.', 'Scambierà forza e costituzione fino alla fine del turno.'),
+        badges: { wall: '3/11' },
+      });
+      b.resolve('inside').snap({
+        log: s('{inside} resolves.', '{inside} si risolve.'),
+        text: s('The switch is applied in L7d, after everything else: 3/11 → 11/3.', 'Lo scambio si applica nel L7d, dopo tutto il resto: 3/11 → 11/3.'),
+        rows: [r('L7c', '{growth} +3/+3 → 3/11', '{growth} +3/+3 → 3/11'), r('L7d', '{inside}: switch → 11/3', '{inside}: scambio → 11/3')],
         badges: { wall: '11/3' },
       });
-      b.cast('growth2', A, ['wall']).resolve('growth2').snap({
-        log: s('A second {growth} resolves on {wall}.', 'Un secondo {growth} si risolve su {wall}.'),
+      b.cast('brute', A, ['wall']).snap({
+        log: s('A casts {brute} (+3/+1) targeting {wall}.', 'A lancia {brute} (+3/+1) su {wall}.'),
         text: s(
-          'It came after the switch, but 7c is still applied before 7d: 0/8 +6/+6 = 6/14, switched = 14/6. Not 14/6 + 3/3!',
-          'È arrivata dopo lo scambio, ma il 7c si applica comunque prima del 7d: 0/8 +6/+6 = 6/14, invertito = 14/6. Non 14/6 + 3/3!',
+          'It arrives after the switch. Will {wall} be 11/3 +3/+1 = 14/4? No: see the next step.',
+          'Arriva dopo lo scambio. {wall} sarà 11/3 +3/+1 = 14/4? No: guarda il passo successivo.',
         ),
-        rows: [r('7c', '{growth} ×2: +6/+6 → 6/14', '{growth} ×2: +6/+6 → 6/14'), r('7d', '{inside}: switch → 14/6', '{inside}: scambio → 14/6')],
-        badges: { wall: '14/6' },
+        badges: { wall: '11/3' },
+      });
+      b.resolve('brute').snap({
+        log: s('{brute} resolves.', '{brute} si risolve.'),
+        text: s(
+          'All the +X/+X are added in L7c, and only then the switch is applied in L7d, whatever the order of the spells: 0/8 +3/+3 +3/+1 = 6/12, switched = 12/6.',
+          'Tutti i +X/+X si sommano nel L7c, e solo dopo si applica lo scambio nel L7d, in qualunque ordine siano arrivate le magie: 0/8 +3/+3 +3/+1 = 6/12, invertito = 12/6.',
+        ),
+        rows: [r('L7c', '{growth} +3/+3, {brute} +3/+1 → 6/12', '{growth} +3/+3, {brute} +3/+1 → 6/12'), r('L7d', '{inside}: switch → 12/6', '{inside}: scambio → 12/6')],
+        badges: { wall: '12/6' },
       });
     },
   },
   {
     id: 'tifa',
-    title: s('Doubling after a switch: the bonus goes to toughness (7c, 7d)', 'Raddoppiare dopo uno scambio: il bonus finisce nella costituzione (7c, 7d)'),
+    title: s('Doubling after a switch: the bonus goes to toughness (L7c, L7d)', 'Raddoppiare dopo uno scambio: il bonus finisce nella costituzione (L7c, L7d)'),
     sub: s('Tifa Lockhart · 3 Forest · Inside Out', 'Tifa Lockhart · 3 Forest · Inside Out'),
     cards: { tifa: 'Tifa Lockhart', forest: 'Forest', inside: 'Inside Out' },
     build: (b) => {
-      const trig = 'Landfall — double power until end of turn';
+      const trig = s('Landfall — double the power of {tifa} until end of turn.', 'Terraferma — raddoppia la forza di {tifa} fino alla fine del turno.');
       b.perm('tifa', A).snap({
         log: s('Setup: {tifa} (1/2).', 'Situazione: {tifa} (1/2).'),
         text: s(
-          'Landfall: whenever a land you control enters, double its power until end of turn. Doubling = it gets +X/+0, where X is its power when the ability resolves.',
-          'Approdo: ogni volta che entra una terra sotto il tuo controllo, raddoppia la sua forza fino alla fine del turno. Raddoppiare = prende +X/+0, dove X è la sua forza quando l’abilità si risolve.',
+          'Landfall ability: whenever a land you control enters, double its power until end of turn. Doubling = it gets +X/+0, where X is its power when the ability resolves.',
+          'Abilità di terraferma: ogni volta che entra una terra che controlli, raddoppia la sua forza fino alla fine del turno. Raddoppiare = prende +X/+0, dove X è la sua forza quando l’abilità si risolve.',
         ),
         badges: { tifa: '1/2' },
       });
       b.perm('forest1', A).trigger('t1', 'tifa', A, trig).snap({
-        log: s('{forest1} enters: landfall triggers.', 'Entra {forest1}: si innesca l’approdo.'),
-        text: s('The trigger is on the stack.', 'L’abilità innescata è in pila.'),
+        log: s('{forest1} enters: the landfall ability triggers.', 'Entra {forest1}: si innesca l’abilità di terraferma.'),
+        text: s('The triggered ability is on the stack.', 'L’abilità innescata è in pila.'),
         badges: { tifa: '1/2' },
       });
       b.resolve('t1').snap({
-        log: s('Landfall resolves: X = 1.', 'L’approdo si risolve: X = 1.'),
-        text: s('+1/+0 (7c).', '+1/+0 (7c).'),
-        rows: [r('7c', '+1/+0', '+1/+0')],
+        log: s('The landfall ability resolves: X = 1.', 'L’abilità di terraferma si risolve: X = 1.'),
+        text: s('+1/+0 (L7c): 2/2.', '+1/+0 (L7c): 2/2.'),
+        rows: [r('L7c', '+1/+0', '+1/+0')],
         badges: { tifa: '2/2' },
       });
-      b.perm('forest2', A).trigger('t2', 'tifa', A, trig).resolve('t2').snap({
-        log: s('{forest2} enters, landfall resolves: X = 2.', 'Entra {forest2}, l’approdo si risolve: X = 2.'),
+      b.perm('forest2', A).trigger('t2', 'tifa', A, trig).snap({
+        log: s('{forest2} enters: the landfall ability triggers.', 'Entra {forest2}: si innesca l’abilità di terraferma.'),
+        text: s('Its power is 2: X will be 2.', 'La sua forza è 2: X sarà 2.'),
+        badges: { tifa: '2/2' },
+      });
+      b.resolve('t2').snap({
+        log: s('The landfall ability resolves: X = 2.', 'L’abilità di terraferma si risolve: X = 2.'),
         text: s('+2/+0 more: 4/2.', 'Altri +2/+0: 4/2.'),
-        rows: [r('7c', '+1/+0, +2/+0', '+1/+0, +2/+0')],
+        rows: [r('L7c', '+1/+0, +2/+0', '+1/+0, +2/+0')],
         badges: { tifa: '4/2' },
       });
-      b.cast('inside', A, ['tifa']).resolve('inside').snap({
-        log: s('{inside} resolves on {tifa}.', '{inside} si risolve su {tifa}.'),
-        text: s('Switch (7d): 4/2 → 2/4.', 'Scambio (7d): 4/2 → 2/4.'),
-        rows: [r('7c', '+1/+0, +2/+0 → 4/2', '+1/+0, +2/+0 → 4/2'), r('7d', 'Switch → 2/4', 'Scambio → 2/4')],
+      b.cast('inside', A, ['tifa']).snap({
+        log: s('A casts {inside} targeting {tifa}.', 'A lancia {inside} su {tifa}.'),
+        text: s('It will switch power and toughness until end of turn.', 'Scambierà forza e costituzione fino alla fine del turno.'),
+        badges: { tifa: '4/2' },
+      });
+      b.resolve('inside').snap({
+        log: s('{inside} resolves.', '{inside} si risolve.'),
+        text: s('Switch (L7d): 4/2 → 2/4.', 'Scambio (L7d): 4/2 → 2/4.'),
+        rows: [r('L7c', '+1/+0, +2/+0 → 4/2', '+1/+0, +2/+0 → 4/2'), r('L7d', 'Switch → 2/4', 'Scambio → 2/4')],
         badges: { tifa: '2/4' },
       });
       b.perm('forest3', A).trigger('t3', 'tifa', A, trig).snap({
-        log: s('{forest3} enters: landfall triggers.', 'Entra {forest3}: si innesca l’approdo.'),
+        log: s('{forest3} enters: the landfall ability triggers.', 'Entra {forest3}: si innesca l’abilità di terraferma.'),
         text: s('When it resolves, its power is 2: X = 2.', 'Quando si risolve, la sua forza è 2: X = 2.'),
         badges: { tifa: '2/4' },
       });
       b.resolve('t3').snap({
-        log: s('Landfall resolves: +2/+0.', 'L’approdo si risolve: +2/+0.'),
+        log: s('The landfall ability resolves: +2/+0.', 'L’abilità di terraferma si risolve: +2/+0.'),
         text: s(
-          'The +2/+0 is added in 7c, before the switch: 1/2 +1 +2 +2 = 6/2, switched = 2/6. Power does not grow: the bonus ends up in toughness.',
-          'Il +2/+0 si somma nel 7c, prima dello scambio: 1/2 +1 +2 +2 = 6/2, invertito = 2/6. La forza non cresce: il bonus finisce nella costituzione.',
+          'The +2/+0 is added in L7c, before the switch: 1/2 +1 +2 +2 = 6/2, switched = 2/6. Power does not grow: the bonus ends up in toughness.',
+          'Il +2/+0 si somma nel L7c, prima dello scambio: 1/2 +1 +2 +2 = 6/2, invertito = 2/6. La forza non cresce: il bonus finisce nella costituzione.',
         ),
-        rows: [r('7c', '+1/+0, +2/+0, +2/+0 → 6/2', '+1/+0, +2/+0, +2/+0 → 6/2'), r('7d', 'Switch → 2/6', 'Scambio → 2/6')],
+        rows: [r('L7c', '+1/+0, +2/+0, +2/+0 → 6/2', '+1/+0, +2/+0, +2/+0 → 6/2'), r('L7d', 'Switch → 2/6', 'Scambio → 2/6')],
         badges: { tifa: '2/6' },
       });
     },
   },
   {
     id: 'clone',
-    title: s('Copying: only copiable values (1a)', 'Copiare: solo i valori copiabili (1a)'),
+    title: s('Copying: only copiable values (L1a)', 'Copiare: solo i valori copiabili (L1a)'),
     sub: s('Clone · Grizzly Bears with Giant Growth and a +1/+1 counter', 'Clone · Grizzly Bears con Giant Growth e un segnalino +1/+1'),
     cards: { clone: 'Clone', bear: 'Grizzly Bears', growth: 'Giant Growth' },
     build: (b) => {
       b.perm('bear', B, { counters: { '+1/+1': 1 } }).cast('growth', B, ['bear']).resolve('growth').snap({
         log: s('Setup: {bear} of B with a counter and {growth}.', 'Situazione: {bear} di B con un segnalino e {growth}.'),
         text: s('2/2 +1/+1 +3/+3 = 6/6.', '2/2 +1/+1 +3/+3 = 6/6.'),
-        rows: [r('7c', 'Counter +1/+1, {growth} +3/+3', 'Segnalino +1/+1, {growth} +3/+3')],
+        rows: [r('L7c', 'Counter +1/+1, {growth} +3/+3', 'Segnalino +1/+1, {growth} +3/+3')],
         badges: { bear: '6/6' },
       });
       b.cast('clone', A).snap({
@@ -349,27 +385,32 @@ export const EXAMPLES: ExampleDef[] = [
           'It copies only what is printed on the card (copiable values, 707.2): name, cost, types, text, 2/2. Not counters, not {growth}.',
           'Copia solo ciò che è stampato sulla carta (valori copiabili, 707.2): nome, costo, tipi, testo, 2/2. Non i segnalini, non {growth}.',
         ),
-        rows: [r('1a', '{clone} becomes {bear} 2/2', '{clone} diventa {bear} 2/2')],
+        rows: [r('L1a', '{clone} becomes {bear} 2/2', '{clone} diventa {bear} 2/2')],
         badges: { bear: '6/6', clone: '2/2' },
       });
     },
   },
   {
     id: 'face-down',
-    title: s('Face down, then turned face up (1b)', 'A faccia in giù, poi girata (1b)'),
+    title: s('Face down, then turned face up (L1b)', 'A faccia in giù, poi girata (L1b)'),
     sub: s('Exalted Angel (morph) · Giant Growth', 'Exalted Angel (metamorfosi) · Giant Growth'),
     cards: { angel: 'Exalted Angel', growth: 'Giant Growth' },
     build: (b) => {
       b.perm('angel', A, { flipped: true }).snap({
         log: s('Setup: {angel} face down.', 'Situazione: {angel} a faccia in giù.'),
         text: s('Face down it is a 2/2 creature with no name, no types, no abilities (708.2).', 'A faccia in giù è una creatura 2/2 senza nome, tipi o abilità (708.2).'),
-        rows: [r('1b', 'Face down: 2/2, no name, no abilities', 'A faccia in giù: 2/2, senza nome né abilità')],
+        rows: [r('L1b', 'Face down: 2/2, no name, no abilities', 'A faccia in giù: 2/2, senza nome né abilità')],
         badges: { angel: '2/2' },
       });
-      b.cast('growth', A, ['angel']).resolve('growth').snap({
-        log: s('{growth} resolves on the face-down creature.', '{growth} si risolve sulla creatura a faccia in giù.'),
+      b.cast('growth', A, ['angel']).snap({
+        log: s('A casts {growth} targeting the face-down creature.', 'A lancia {growth} sulla creatura a faccia in giù.'),
+        text: s('+3/+3 until end of turn, when it resolves.', '+3/+3 fino alla fine del turno, quando si risolve.'),
+        badges: { angel: '2/2' },
+      });
+      b.resolve('growth').snap({
+        log: s('{growth} resolves.', '{growth} si risolve.'),
         text: s('2/2 +3/+3 = 5/5.', '2/2 +3/+3 = 5/5.'),
-        rows: [r('1b', 'Face down 2/2', 'A faccia in giù 2/2'), r('7c', '{growth} +3/+3', '{growth} +3/+3')],
+        rows: [r('L1b', 'Face down 2/2', 'A faccia in giù 2/2'), r('L7c', '{growth} +3/+3', '{growth} +3/+3')],
         badges: { angel: '5/5' },
       });
       b.set('angel', { flipped: false }).snap({
@@ -378,101 +419,93 @@ export const EXAMPLES: ExampleDef[] = [
           'It is the same object (708.8): {growth} keeps applying. 4/5 +3/+3 = 7/8, with flying and lifelink.',
           'È lo stesso oggetto (708.8): {growth} continua ad applicarsi. 4/5 +3/+3 = 7/8, con volare e legame vitale.',
         ),
-        rows: [r('6', 'Flying, lifelink', 'Volare, legame vitale'), r('7c', '{growth} +3/+3', '{growth} +3/+3')],
+        rows: [r('L6', 'Flying, lifelink', 'Volare, legame vitale'), r('L7c', '{growth} +3/+3', '{growth} +3/+3')],
         badges: { angel: '7/8' },
       });
     },
   },
   {
     id: 'control',
-    title: s('Changing control and boosts (2, 7c)', 'Cambio di controllo e potenziamenti (2, 7c)'),
+    title: s('Changing control and boosts (L2, L7c)', 'Cambio di controllo e potenziamenti (L2, L7c)'),
     sub: s("Threaten · Glorious Anthem · opponent's Grizzly Bears", "Threaten · Glorious Anthem · Grizzly Bears dell'avversario"),
     cards: { threaten: 'Threaten', anthem: 'Glorious Anthem', bear: 'Grizzly Bears' },
     build: (b) => {
-      b.perm('anthem', A).perm('bear', B).snap({
-        log: s('Setup: {anthem} of A, {bear} of B.', 'Situazione: {anthem} di A, {bear} di B.'),
+      b.perm('anthem', A).perm('bear', B, { tapped: true }).snap({
+        log: s('Setup: {anthem} of A, {bear} of B (tapped).', 'Situazione: {anthem} di A, {bear} di B (TAPpato).'),
         text: s('{anthem} only boosts the creatures A controls.', '{anthem} potenzia solo le creature controllate da A.'),
         badges: { bear: '2/2' },
       });
-      b.cast('threaten', A, ['bear']).resolve('threaten').set('bear', { controller: A }).snap({
+      b.cast('threaten', A, ['bear']).snap({
+        log: s('A casts {threaten} targeting {bear}.', 'A lancia {threaten} su {bear}.'),
+        text: s('Untap it, gain control of it and give it haste until end of turn.', 'La STAPpa, ne prende il controllo e le dà rapidità fino alla fine del turno.'),
+        badges: { bear: '2/2' },
+      });
+      b.resolve('threaten').set('bear', { controller: A, tapped: false }).snap({
         log: s('{threaten} resolves: A gains control of {bear}.', '{threaten} si risolve: A prende il controllo di {bear}.'),
         text: s(
-          'Control changes in layer 2, before 7c: now {anthem} boosts it too. 3/3 with haste.',
-          'Il controllo cambia nel layer 2, prima del 7c: ora anche {anthem} lo potenzia. 3/3 con rapidità.',
+          'Control changes in L2, before L7c: now {anthem} boosts it too, 3/3. It has summoning sickness, because A has not controlled it continuously since the start of the turn (302.6), but haste lets it attack anyway (702.10).',
+          'Il controllo cambia nel L2, prima del L7c: ora anche {anthem} lo potenzia, 3/3. Ha debolezza da evocazione, perché A non lo controlla ininterrottamente dall’inizio del turno (302.6), ma la rapidità gli permette di attaccare lo stesso (702.10).',
         ),
-        rows: [r('2', 'Controller: A', 'Controllore: A'), r('6', 'Haste', 'Rapidità'), r('7c', '{anthem} +1/+1', '{anthem} +1/+1')],
+        rows: [r('L2', 'Controller: A', 'Controllore: A'), r('L6', 'Haste', 'Rapidità'), r('L7c', '{anthem} +1/+1', '{anthem} +1/+1')],
         badges: { bear: '3/3' },
       });
     },
   },
   {
-    id: 'text',
-    title: s("Changing a card's text (3)", 'Cambiare il testo di una carta (3)'),
-    sub: s('Artificial Evolution · Lord of Atlantis · Llanowar Elves', 'Artificial Evolution · Lord of Atlantis · Llanowar Elves'),
-    cards: { evo: 'Artificial Evolution', lord: 'Lord of Atlantis', elves: 'Llanowar Elves' },
-    build: (b) => {
-      b.perm('lord', A).perm('elves', A).snap({
-        log: s('Setup: {lord} and {elves}.', 'Situazione: {lord} e {elves}.'),
-        text: s('{lord} boosts other Merfolk. {elves} is an Elf: no bonus.', '{lord} potenzia gli altri Tritoni. {elves} è un Elfo: nessun bonus.'),
-        badges: { elves: '1/1' },
-      });
-      b.cast('evo', A, ['lord']).resolve('evo').snap({
-        log: s('{evo} resolves on {lord}: Merfolk → Elf.', '{evo} si risolve su {lord}: Tritone → Elfo.'),
-        text: s(
-          'The text of {lord} now says "Elf" (layer 3). {elves} gets +1/+1 and islandwalk.',
-          'Il testo di {lord} ora dice "Elfo" (layer 3). {elves} prende +1/+1 e passaterre-isola.',
-        ),
-        rows: [r('3', '{lord}: "Merfolk" → "Elf"', '{lord}: "Tritone" → "Elfo"'), r('6', '{elves}: islandwalk', '{elves}: passaterre-isola'), r('7c', '{elves}: +1/+1', '{elves}: +1/+1')],
-        badges: { elves: '2/2' },
-      });
-    },
-  },
-  {
     id: 'dependency',
-    title: s('Dependency: Blood Moon and Urborg (4, 613.8)', 'Dipendenza: Blood Moon e Urborg (4, 613.8)'),
+    title: s('Dependency: Blood Moon and Urborg (L4, 613.8)', 'Dipendenza: Blood Moon e Urborg (L4, 613.8)'),
     sub: s('Blood Moon · Urborg, Tomb of Yawgmoth · Island', 'Blood Moon · Urborg, Tomb of Yawgmoth · Island'),
     cards: { moon: 'Blood Moon', urborg: 'Urborg, Tomb of Yawgmoth', island: 'Island' },
     build: (b) => {
       b.perm('urborg', A).perm('island', B).snap({
         log: s('Setup: {urborg} and {island}.', 'Situazione: {urborg} e {island}.'),
-        text: s('{urborg}: every land is also a Swamp (layer 4).', '{urborg}: ogni terra è anche una Palude (layer 4).'),
-        rows: [r('4', '{urborg}: all lands are Swamps too', '{urborg}: tutte le terre sono anche Paludi')],
-        badges: { urborg: s('+ Swamp', '+ Palude'), island: s('+ Swamp', '+ Palude') },
+        text: s('{urborg}: every land is also a Swamp (L4).', '{urborg}: ogni terra è anche una Palude (L4).'),
+        rows: [r('L4', '{urborg}: all lands are Swamps too', '{urborg}: tutte le terre sono anche Paludi')],
+        badges: { urborg: s('Swamp', 'Palude'), island: s('Swamp', 'Palude') },
       });
-      b.cast('moon', B).resolve('moon').snap({
+      b.cast('moon', B).snap({
+        log: s('B casts {moon}.', 'B lancia {moon}.'),
+        text: s('Nonbasic lands will be Mountains.', 'Le terre non base saranno Montagne.'),
+        badges: { urborg: s('Swamp', 'Palude'), island: s('Swamp', 'Palude') },
+      });
+      b.resolve('moon').snap({
         log: s('{moon} resolves.', '{moon} si risolve.'),
         text: s(
-          'Both effects are in layer 4. {moon} turns {urborg} into a Mountain and removes its ability: the effect of {urborg} depends on {moon} (613.8), so {moon} goes first regardless of timestamps. {urborg} is a Mountain, no land is a Swamp.',
-          'Entrambi gli effetti sono nel layer 4. {moon} rende {urborg} una Montagna e gli toglie l’abilità: l’effetto di {urborg} dipende da {moon} (613.8), quindi {moon} si applica prima, a prescindere dal timestamp. {urborg} è una Montagna, nessuna terra è Palude.',
+          'Both effects are in L4. {moon} turns {urborg} into a Mountain and removes its ability: the effect of {urborg} depends on {moon} (613.8), so {moon} goes first regardless of timestamps. {urborg} is a Mountain, no land is a Swamp.',
+          'Entrambi gli effetti sono nel L4. {moon} rende {urborg} una Montagna e gli toglie l’abilità: l’effetto di {urborg} dipende da {moon} (613.8), quindi {moon} si applica prima, a prescindere dal timestamp. {urborg} è una Montagna, nessuna terra è Palude.',
         ),
         rows: [
-          r('4', '{moon}: nonbasic lands are Mountains (305.7)', '{moon}: le terre non base sono Montagne (305.7)'),
-          r('4', '{urborg}: no longer has the ability → nothing', '{urborg}: non ha più l’abilità → niente'),
+          r('L4', '{moon}: nonbasic lands are Mountains (305.7)', '{moon}: le terre non base sono Montagne (305.7)'),
+          r('L4', '{urborg}: no longer has the ability', '{urborg}: non ha più l’abilità'),
         ],
-        badges: { urborg: s('Mountain', 'Montagna'), island: s('Island', 'Isola') },
+        badges: { urborg: s('Mountain', 'Montagna') },
       });
     },
   },
   {
     id: 'opalescence',
-    title: s('The classic: Opalescence and Humility (4, 6, 7b)', 'Il classico: Opalescence e Humility (4, 6, 7b)'),
+    title: s('The classic: Opalescence and Humility (L4, L6, L7b)', 'Il classico: Opalescence e Humility (L4, L6, L7b)'),
     sub: s('Opalescence · Humility', 'Opalescence · Humility'),
     cards: { opal: 'Opalescence', humility: 'Humility' },
     build: (b) => {
       b.perm('humility', A).snap({
         log: s('Setup: {humility} (first timestamp).', 'Situazione: {humility} (primo timestamp).'),
-        text: s('All creatures lose all abilities and are 1/1.', 'Tutte le creature perdono le abilità e sono 1/1.'),
+        text: s('All creatures lose all abilities and have base power and toughness 1/1.', 'Tutte le creature perdono le abilità e hanno forza e costituzione base 1/1.'),
       });
-      b.cast('opal', A).resolve('opal').snap({
+      b.cast('opal', A).snap({
+        log: s('A casts {opal}.', 'A lancia {opal}.'),
+        text: s('Each other non-Aura enchantment will be a creature with power and toughness equal to its mana value.', 'Ogni altro incantesimo non Aura sarà una creatura con forza e costituzione pari al suo valore di mana.'),
+      });
+      b.resolve('opal').snap({
         log: s('{opal} resolves (later timestamp).', '{opal} si risolve (timestamp più recente).'),
         text: s(
-          '{humility} becomes a 4/4 creature (layer 4) and loses its own ability (6), but its effect had already started and continues (613.6). In 7b the most recent timestamp wins: {opal} sets 4/4 after {humility} sets 1/1. If {opal} had been there first, {humility} would be 1/1.',
-          '{humility} diventa una creatura 4/4 (layer 4) e perde la propria abilità (6), ma il suo effetto era già iniziato e continua (613.6). Nel 7b vince il timestamp più recente: {opal} imposta 4/4 dopo che {humility} imposta 1/1. Se {opal} fosse arrivata prima, {humility} sarebbe 1/1.',
+          '{humility} becomes a 4/4 creature (L4) and loses its own ability (L6), but its effect had already started and continues (613.6). In L7b the most recent timestamp wins: {opal} sets 4/4 after {humility} sets 1/1. If {opal} had been there first, {humility} would be 1/1.',
+          '{humility} diventa una creatura 4/4 (L4) e perde la propria abilità (L6), ma il suo effetto era già iniziato e continua (613.6). Nel L7b vince il timestamp più recente: {opal} imposta 4/4 dopo che {humility} imposta 1/1. Se {opal} fosse arrivata prima, {humility} sarebbe 1/1.',
         ),
         rows: [
-          r('4', '{opal}: {humility} is an Enchantment Creature', '{opal}: {humility} è un Incantesimo Creatura'),
-          r('6', '{humility}: creatures lose abilities (itself too)', '{humility}: le creature perdono le abilità (anche lei)'),
-          r('7b', '{humility} 1/1, then {opal} 4/4 (timestamp)', '{humility} 1/1, poi {opal} 4/4 (timestamp)'),
+          r('L4', '{opal}: {humility} is an Enchantment Creature', '{opal}: {humility} è un Incantesimo Creatura'),
+          r('L6', '{humility}: creatures lose abilities (itself too)', '{humility}: le creature perdono le abilità (anche lei)'),
+          r('L7b', '{humility} 1/1, then {opal} 4/4 (timestamp)', '{humility} 1/1, poi {opal} 4/4 (timestamp)'),
         ],
         badges: { humility: '4/4' },
       });
@@ -480,7 +513,7 @@ export const EXAMPLES: ExampleDef[] = [
   },
   {
     id: 'bello-banner',
-    title: s('Bello: an artifact becomes a creature and boosts itself (4, 6, 7b, 7c)', 'Bello: un artefatto diventa creatura e si potenzia da solo (4, 6, 7b, 7c)'),
+    title: s('Bello: an artifact becomes a creature and boosts itself (L4, L6, L7b, L7c)', 'Bello: un artefatto diventa creatura e si potenzia da solo (L4, L6, L7b, L7c)'),
     sub: s("Bello, Bard of the Brambles · Vanquisher's Banner (chosen type: Elemental)", "Bello, Bard of the Brambles · Vanquisher's Banner (tipo scelto: Elementale)"),
     cards: { bello: 'Bello, Bard of the Brambles', banner: "Vanquisher's Banner" },
     build: (b) => {
@@ -496,10 +529,10 @@ export const EXAMPLES: ExampleDef[] = [
           '{banner} (artefatto, valore di mana 5) è una creatura Elementale 4/4 con indistruttibile e rapidità. Il suo "le creature del tipo scelto prendono +1/+1" ora vale anche per sé: 5/5.',
         ),
         rows: [
-          r('4', '{bello}: {banner} is an Elemental creature', '{bello}: {banner} è una creatura Elementale'),
-          r('6', '{bello}: indestructible, haste, draw', '{bello}: indistruttibile, rapidità, pesca'),
-          r('7b', '{bello}: 4/4', '{bello}: 4/4'),
-          r('7c', '{banner}: +1/+1 (it is an Elemental creature)', '{banner}: +1/+1 (è una creatura Elementale)'),
+          r('L4', '{bello}: {banner} is an Elemental creature', '{bello}: {banner} è una creatura Elementale'),
+          r('L6', '{bello}: indestructible, haste, draw', '{bello}: indistruttibile, rapidità, pesca'),
+          r('L7b', '{bello}: 4/4', '{bello}: 4/4'),
+          r('L7c', '{banner}: +1/+1 (it is an Elemental creature)', '{banner}: +1/+1 (è una creatura Elementale)'),
         ],
         badges: { banner: '5/5' },
       });
@@ -508,26 +541,40 @@ export const EXAMPLES: ExampleDef[] = [
   {
     id: 'bello-humility',
     title: s('Bello and Humility: an effect that started does not stop (613.6)', 'Bello e Humility: un effetto già iniziato non si ferma (613.6)'),
-    sub: s('Bello, Bard of the Brambles · Humility', 'Bello, Bard of the Brambles · Humility'),
-    cards: { bello: 'Bello, Bard of the Brambles', humility: 'Humility' },
+    sub: s("Bello, Bard of the Brambles · Vanquisher's Banner · Humility of the opponent", "Bello, Bard of the Brambles · Vanquisher's Banner · Humility dell'avversario"),
+    cards: { bello: 'Bello, Bard of the Brambles', banner: "Vanquisher's Banner", humility: 'Humility' },
     build: (b) => {
-      b.perm('bello', A).snap({
-        log: s("A's turn: {bello} (first timestamp).", 'Turno di A: {bello} (primo timestamp).'),
-        text: s('{bello} is 3/3.', '{bello} è 3/3.'),
-        badges: { bello: '3/3' },
+      b.active(B).perm('bello', A).perm('banner', A).snap({
+        log: s("B's turn: {bello} and {banner} (Elemental) of A.", 'Turno di B: {bello} e {banner} (Elementale) di A.'),
+        text: s("It is not A's turn: {banner} is just an artifact. {bello} is 3/3.", 'Non è il turno di A: {banner} è solo un artefatto. {bello} è 3/3.'),
+        badges: { bello: '3/3', banner: s('Elemental', 'Elementale') },
       });
-      b.cast('humility', A).resolve('humility').snap({
-        log: s('{humility} resolves (later timestamp).', '{humility} si risolve (timestamp più recente).'),
+      b.cast('humility', B).snap({
+        log: s('B casts {humility}.', 'B lancia {humility}.'),
+        text: s('It will have the most recent timestamp.', 'Avrà il timestamp più recente.'),
+        badges: { bello: '3/3', banner: s('Elemental', 'Elementale') },
+      });
+      b.resolve('humility').snap({
+        log: s('{humility} resolves under the control of B.', '{humility} si risolve sotto il controllo di B.'),
         text: s(
-          '{humility} (mana value 4) is a 4/4 creature thanks to {bello} (layer 4). {humility} removes the abilities of {bello} too (6), but its effect had started in layer 4 and continues (613.6). Then timestamps: {humility} came later, so in 6 it removes the abilities {bello} gives, and in 7b its 1/1 overrides 4/4. If {humility} had been there first: 4/4 with indestructible and haste.',
-          '{humility} (valore di mana 4) è una creatura 4/4 grazie a {bello} (layer 4). {humility} toglie le abilità anche a {bello} (6), ma il suo effetto era iniziato nel layer 4 e continua (613.6). Poi il timestamp: {humility} è arrivata dopo, quindi nel 6 toglie le abilità date da {bello} e nel 7b il suo 1/1 sovrascrive il 4/4. Se {humility} fosse stata in campo prima: 4/4 con indistruttibile e rapidità.',
+          '{bello} loses its ability and is 1/1 (L6, L7b). {humility} is not affected by {bello}: B controls it, and {bello} only affects permanents A controls.',
+          '{bello} perde la sua abilità ed è 1/1 (L6, L7b). {humility} non è toccata da {bello}: la controlla B, e {bello} riguarda solo i permanenti controllati da A.',
+        ),
+        rows: [r('L6', '{humility}: {bello} loses all abilities', '{humility}: {bello} perde tutte le abilità'), r('L7b', '{humility}: {bello} 1/1', '{humility}: {bello} 1/1')],
+        badges: { bello: '1/1', banner: s('Elemental', 'Elementale') },
+      });
+      b.active(A).snap({
+        log: s("A's turn.", 'Turno di A.'),
+        text: s(
+          '{bello} has no abilities, yet {banner} becomes a creature: the effect of {bello} applies starting in L4, where {bello} still has its ability, so it continues in the following layers (613.6). Then timestamps: {humility} is newer, so in L6 it removes the abilities given by {bello} (and the +1/+1 of {banner}) and in L7b its 1/1 overrides 4/4.',
+          '{bello} non ha abilità, eppure {banner} diventa una creatura: l’effetto di {bello} inizia ad applicarsi nel L4, dove {bello} ha ancora la sua abilità, quindi continua nei layer successivi (613.6). Poi il timestamp: {humility} è più recente, quindi nel L6 toglie le abilità date da {bello} (e il +1/+1 di {banner}) e nel L7b il suo 1/1 sovrascrive il 4/4.',
         ),
         rows: [
-          r('4', '{bello}: {humility} is an Elemental creature', '{bello}: {humility} è una creatura Elementale'),
-          r('6', '{bello} gives abilities, then {humility} removes them all', '{bello} dà le abilità, poi {humility} le toglie tutte'),
-          r('7b', '{bello} 4/4, then {humility} 1/1', '{bello} 4/4, poi {humility} 1/1'),
+          r('L4', '{bello}: {banner} is an Elemental creature (613.6)', '{bello}: {banner} è una creatura Elementale (613.6)'),
+          r('L6', '{bello} gives abilities, then {humility} removes them all', '{bello} dà le abilità, poi {humility} le toglie tutte'),
+          r('L7b', '{bello} 4/4, then {humility} 1/1', '{bello} 4/4, poi {humility} 1/1'),
         ],
-        badges: { bello: '1/1', humility: '1/1' },
+        badges: { bello: '1/1', banner: '1/1' },
       });
     },
   },
@@ -537,6 +584,7 @@ export const EXAMPLES: ExampleDef[] = [
 export async function buildExample(
   def: ExampleDef,
   getCard: (name: string) => Promise<Card | null>,
+  lang: Lang,
 ): Promise<{ steps: BuiltStep[]; cards: Record<string, Card> }> {
   const cards: Record<string, Card> = {};
   for (const [ref, name] of Object.entries(def.cards)) {
@@ -544,7 +592,7 @@ export async function buildExample(
     if (!c) throw new Error(name);
     cards[ref] = c;
   }
-  const b = new Builder(cards);
+  const b = new Builder(cards, lang);
   def.build(b);
   return { steps: b.steps, cards };
 }
