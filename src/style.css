@@ -845,7 +845,7 @@ input { width: 100%; }
 .ex-layers th, .ex-layers td { border-top: 1px solid var(--line); padding: 3px 6px; text-align: start; vertical-align: top; }
 .ex-layers th { color: var(--accent); width: 2.5em; font-variant-numeric: tabular-nums; }
 .pt-badge {
-  position: absolute; z-index: 2; inset-inline-end: 2px; bottom: 2px;
-  background: #fff; color: #111; font-size: 11px; font-weight: 800; padding: 0 4px; border-radius: 4px;
-  box-shadow: 0 1px 3px #0008; white-space: nowrap; max-width: calc(100% - 4px); overflow: hidden; text-overflow: ellipsis;
+  position: absolute; z-index: 2; inset-inline-start: 2px; bottom: 2px;
+  background: #fff; color: #111; font-size: 12px; font-weight: 800; padding: 0 4px; border-radius: 4px;
+  box-shadow: 0 1px 3px #0008; white-space: nowrap; max-width: calc(100% - 30px); overflow: hidden; text-overflow: ellipsis;
 }
