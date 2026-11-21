@@ -774,3 +774,23 @@ input { width: 100%; }
   .top .icon-btn { width: 28px; height: 30px; }
   .players-select select { font-size: 12px; max-width: 96px; min-height: 30px; padding: 0 4px; }
 }
+
+/* ---------- Guida al primo avvio ---------- */
+.tour { position: fixed; inset: 0; z-index: 120; }
+.tour-dim { position: absolute; inset: 0; background: #000b; }
+.tour-spot {
+  position: absolute; border-radius: 10px; box-shadow: 0 0 0 9999px #000b, 0 0 0 2px var(--accent) inset;
+  transition: all .25s ease; pointer-events: none;
+}
+.tour-bubble {
+  position: absolute; background: #fff; color: #15120c; border-radius: 14px; padding: 12px 14px;
+  box-shadow: 0 16px 40px #000c; display: grid; gap: 6px;
+}
+.tour-bubble h2 { margin: 0; font-size: 16px; color: #15120c; }
+.tour-bubble p { margin: 0; font-size: 14px; line-height: 1.45; }
+.tour-count { color: #8a8f9c; font-size: 12px !important; font-weight: 700; }
+.tour-actions { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.tour-actions .primary { margin-inline-start: auto; min-height: 34px; }
+.tour-actions .secondary { margin-top: 0; min-height: 34px; color: #15120c; border-color: #ccc; }
+.tour-skip { border: 0; background: none; color: #8a8f9c; cursor: pointer; font-size: 13px; padding: 0 4px; }
+@media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; } }

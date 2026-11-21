@@ -28,6 +28,7 @@ import { decodeShare, encodeShare, sharedCodeFromUrl, shareUrl, shortLink } from
 import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
 import { Help } from './Help';
+import { Tour, type TourStep } from './Tour';
 import { StepPicker } from './StepPicker';
 import { CardViewer } from './CardViewer';
 import { useDrag, type DragItem } from './dnd';
@@ -87,6 +88,7 @@ const MUTATE = 'M12 3l8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4';
 const COUNTER = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v8M8 12h8';
 const LOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11';
 const UNLOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 6.8-1.2';
+const QUESTION = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
 
@@ -134,6 +136,23 @@ export function App() {
       return false;
     }
   };
+  /** guida al primo avvio (si può rivedere dal menu) */
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    let done = false;
+    try {
+      done = localStorage.getItem('tourDone') === '1';
+    } catch {}
+    if (done || sharedCodeFromUrl()) return; // chi apre un link condiviso va dritto al setup
+    const id = setTimeout(() => setTourOpen(true), 900);
+    return () => clearTimeout(id);
+  }, []);
+  function closeTour() {
+    setTourOpen(false);
+    try {
+      localStorage.setItem('tourDone', '1');
+    } catch {}
+  }
   /** includere lo storico nel link condiviso */
   const [shareHistory, setShareHistory] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -281,6 +300,7 @@ export function App() {
     setLocked(null);
     try {
       localStorage.removeItem('noConfirmDelete');
+      localStorage.removeItem('tourDone');
     } catch {}
     setPos(0);
     setTargeting(null);
@@ -1316,6 +1336,9 @@ export function App() {
                   <Icon d={isFull ? EXIT_FULL : FULL} size={18} />
                 </button>
               )}
+              <button type="button" class="share-btn" onClick={() => setTourOpen(true)} aria-label={t('tourAgain')} title={t('tourAgain')}>
+                <Icon d={QUESTION} size={18} />
+              </button>
               <button type="button" class="share-btn" onClick={resetApp} aria-label={t('reset')} title={t('reset')}>
                 <Icon d={RESET} size={18} />
               </button>
@@ -1372,6 +1395,9 @@ export function App() {
             )}
             <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); openShare();  }}>
               <Icon d={SHARE} size={16} /> {t('share')}
+            </button>
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); setTourOpen(true); }}>
+              <Icon d={QUESTION} size={16} /> {t('tourAgain')}
             </button>
             <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); resetApp(); }}>
               <Icon d={RESET} size={16} /> {t('reset')}
@@ -2251,6 +2277,20 @@ export function App() {
       )}
 
       {help && <Help onClose={() => toggleHelp(false)} />}
+
+      {tourOpen && (
+        <Tour
+          onClose={closeTour}
+          steps={
+            [
+              { target: narrow ? '.text-btn' : '.search-row .search', title: 'tour1Title', text: 'tour1Text' },
+              { target: '.history-bar', title: 'tour2Title', text: 'tour2Text' },
+              { target: '.players-select', title: 'tour3Title', text: 'tour3Text' },
+              { target: '.priority .pass', title: 'tour4Title', text: 'tour4Text' },
+            ] as TourStep[]
+          }
+        />
+      )}
 
       {viewer && <CardViewer card={viewer} onClose={() => setViewer(null)} />}
 
