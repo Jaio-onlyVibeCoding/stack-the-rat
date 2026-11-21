@@ -29,6 +29,7 @@ import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
 import { Help } from './Help';
 import { Tour, type TourStep } from './Tour';
+import { EXAMPLES, buildExample, fillCards, pick, type BuiltStep, type ExampleDef } from './examples';
 import { StepPicker } from './StepPicker';
 import { CardViewer } from './CardViewer';
 import { useDrag, type DragItem } from './dnd';
@@ -88,6 +89,7 @@ const MUTATE = 'M12 3l8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4';
 const COUNTER = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v8M8 12h8';
 const LOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11';
 const UNLOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 6.8-1.2';
+const LAYERS = 'M12 3 2 8l10 5 10-5-10-5zM2 12l10 5 10-5M2 16l10 5 10-5';
 const QUESTION = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
 const CONTROL = 'M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12';
@@ -343,6 +345,39 @@ export function App() {
     g.objs.some((o) => o.zone === 'battlefield' && (o.card.keywords.includes('First strike') || o.card.keywords.includes('Double strike')));
   const phaseName = (i: number) => t('phaseNames').split('|')[i] ?? '';
 
+  /** Esempi sui layer: elenco aperto, esempio caricato (passi costruiti) */
+  const [exListOpen, setExListOpen] = useState(false);
+  const [ex, setEx] = useState<{ def: ExampleDef; steps: BuiltStep[]; cards: Record<string, Card> } | null>(null);
+  const [exOpen, setExOpen] = useState(true);
+  async function loadExample(def: ExampleDef) {
+    setExListOpen(false);
+    setNotice(t('exLoading'));
+    try {
+      const l = langInfo(lang).scryfall;
+      const built = await buildExample(def, (name) => getCard(name, l));
+      setTimeline(
+        built.steps.map((st) => ({ game: st.game, messages: [fillCards(pick(st.info.log, lang), built.cards)], time: now() })),
+      );
+      setPos(0);
+      setLocked(null);
+      setTargeting(null);
+      setPanels([]);
+      setCollapsed([]);
+      setMenu(null);
+      setChoicesFor(null);
+      setShowExamples(false);
+      setEx({ def, ...built });
+      setExOpen(true);
+      setNotice(null);
+    } catch {
+      setNotice(t('exError'));
+      setTimeout(() => setNotice(null), 5000);
+    }
+  }
+  /** passo dell'esempio corrispondente alla condizione attuale (-1 se l'utente ha cambiato qualcosa) */
+  const exIdx = ex ? ex.steps.findIndex((st) => st.game === g) : -1;
+  const exBadges = exIdx >= 0 ? ex!.steps[exIdx].badges : {};
+
   function resetApp() {
     if (!window.confirm(t('resetConfirm'))) return;
     setTimeline([{ game: initialGame(), messages: [t('logReset')], time: now() }]);
@@ -359,6 +394,7 @@ export function App() {
     setChoicesFor(null);
     setPreview(null);
     setShowExamples(true);
+    setEx(null);
     setViewer(null);
     setHistoryOpen(false);
     setWideStack(false);
@@ -392,6 +428,7 @@ export function App() {
         setTimeline(tl.map((x) => ({ ...x, time: x.time || now() })));
         setPos(p);
         setShowExamples(false);
+        setEx(null);
         setNotice(t('sharedLoaded'));
         setTimeout(() => setNotice(null), 3500);
       })
@@ -1205,6 +1242,7 @@ export function App() {
         <Icon d={EYE} size={14} />
       </button>
       {o.token && <span class="token-tag">{t('token')}</span>}
+      {exBadges[o.uid] !== undefined && o.zone === 'battlefield' && <span class="pt-badge">{pick(exBadges[o.uid], lang)}</span>}
       {o.counters && Object.keys(o.counters).length > 0 && (
         <span class="counters">
           {Object.entries(o.counters).map(([k, v]) => (
@@ -1404,6 +1442,10 @@ export function App() {
         <div class="player-count" role="group" aria-label={t('players')}>
           {!narrow && (
             <>
+              <button type="button" class={`text-btn${exListOpen ? ' on' : ''}`} onClick={() => setExListOpen(true)}>
+                <Icon d={LAYERS} size={14} />
+                {t('examples')}
+              </button>
               {document.fullscreenEnabled && (
                 <button
                   type="button"
@@ -1475,6 +1517,9 @@ export function App() {
             )}
             <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); openShare();  }}>
               <Icon d={SHARE} size={16} /> {t('share')}
+            </button>
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); setExListOpen(true); }}>
+              <Icon d={LAYERS} size={16} /> {t('examples')}
             </button>
             <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); setTourOpen(true); }}>
               <Icon d={QUESTION} size={16} /> {t('tourAgain')}
@@ -1887,6 +1932,73 @@ export function App() {
 
         {columns[1].length > 0 && <div class="col">{columns[1].map(renderZone)}</div>}
       </div>
+
+      {/* ---- Esempi sui layer: elenco ---- */}
+      {exListOpen && (
+        <div class="sheet-backdrop" onClick={() => setExListOpen(false)}>
+          <div class="sheet ex-list" role="dialog" aria-label={t('examplesTitle')} onClick={(e) => e.stopPropagation()}>
+            <header class="ex-head">
+              <h2>{t('examplesTitle')}</h2>
+              <button type="button" class="viewer-close" aria-label={t('close')} onClick={() => setExListOpen(false)}>
+                ✕
+              </button>
+            </header>
+            <p class="ex-intro">{t('examplesIntro')}</p>
+            <ol>
+              {EXAMPLES.map((d) => (
+                <li key={d.id}>
+                  <button type="button" class={ex?.def.id === d.id ? 'on' : ''} onClick={() => loadExample(d)}>
+                    <b>{pick(d.title, lang)}</b>
+                    <span>{pick(d.sub, lang)}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Esempi sui layer: spiegazione del passo attuale ---- */}
+      {ex && (
+        <section class={`ex-panel${exOpen ? ' open' : ''}`}>
+          <div class="ex-bar">
+            <button type="button" class="ex-title" aria-expanded={exOpen} onClick={() => setExOpen(!exOpen)}>
+              <Icon d={LAYERS} size={14} />
+              <b>{pick(ex.def.title, lang)}</b>
+              {exIdx >= 0 && <span class="ex-count">{fill(t('exStep'), { i: String(exIdx + 1), n: String(ex.steps.length) })}</span>}
+              <Icon d={chevron(!exOpen)} size={16} />
+            </button>
+            <button type="button" class="ex-x" aria-label={t('exClose')} title={t('exClose')} onClick={() => setEx(null)}>
+              <Icon d={CROSS} size={12} />
+            </button>
+          </div>
+          {exOpen && (
+            <div class="ex-body">
+              <p class="ex-sub">{pick(ex.def.sub, lang)}</p>
+              {exIdx < 0 ? (
+                <p>{t('exFree')}</p>
+              ) : (
+                <>
+                  <p>{fillCards(pick(ex.steps[exIdx].info.text, lang), ex.cards)}</p>
+                  {ex.steps[exIdx].info.rows && (
+                    <table class="ex-layers">
+                      <caption class="sr-only">{t('exLayers')}</caption>
+                      <tbody>
+                        {ex.steps[exIdx].info.rows!.map((row, k) => (
+                          <tr key={k}>
+                            <th scope="row">{row.l}</th>
+                            <td>{fillCards(pick(row.t, lang), ex.cards)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ---- Storico: indietro / avanti tra le condizioni ---- */}
       <section class={`bar history-bar${historyOpen ? ' open' : ''}${flash ? ' flash' : ''}`}>
