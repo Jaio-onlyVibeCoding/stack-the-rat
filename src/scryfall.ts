@@ -168,7 +168,7 @@ export async function suggest(q: string, signal?: AbortSignal): Promise<Suggesti
 const cache = new Map<string, Card>();
 
 /**
- * Carta per nome esatto. Se è indicata una lingua, prova la stampa più recente in quella lingua;
+ * Carta per nome esatto: la prima stampa (la più vecchia) nella lingua indicata;
  * se non esiste, usa la versione inglese.
  */
 export async function getCard(name: string, scryLang: string): Promise<Card | null> {
@@ -177,13 +177,18 @@ export async function getCard(name: string, scryLang: string): Promise<Card | nu
   if (hit) return hit;
 
   let card: Card | null = null;
-  if (scryLang && scryLang !== 'en') {
-    const q = encodeURIComponent(`!"${name}" lang:${scryLang}`);
-    const r = await get<{ data: RawCard[] }>(`/cards/search?q=${q}&unique=prints&order=released&dir=desc`);
+  // Prima stampa (la più vecchia) nella lingua richiesta, con immagine; poi in inglese
+  const hasImg = (c: RawCard) => !!(c.image_uris || c.card_faces?.[0]?.image_uris);
+  for (const l of [...new Set([scryLang || 'en', 'en'])]) {
+    const q = encodeURIComponent(`!"${name}" lang:${l} -is:digital -is:oversized -st:memorabilia -st:token`);
+    const r = await get<{ data: RawCard[] }>(`/cards/search?q=${q}&unique=prints&order=released&dir=asc`).catch(() => null);
     // Solo carte con lo stesso nome completo: "!" di Scryfall trova anche carte che hanno
     // quel nome su una faccia sola (es. Emeritus of Conflict // Lightning Bolt)
-    const exact = r?.data?.find((c) => c.name === name);
-    if (exact) card = toCard(exact);
+    const exact = r?.data?.find((c) => c.name === name && hasImg(c));
+    if (exact) {
+      card = toCard(exact);
+      break;
+    }
   }
   if (!card) {
     const r = await get<RawCard>(`/cards/named?exact=${encodeURIComponent(name)}`);

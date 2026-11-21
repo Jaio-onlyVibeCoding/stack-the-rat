@@ -362,10 +362,6 @@ export function App() {
       setLocked(null);
       setTargeting(null);
       setPanels([]);
-      // campi di battaglia che l'esempio non usa: chiusi
-      setCollapsed(
-        built.steps[0].game.players.filter((p) => !built.steps.some((st) => st.game.objs.some((o) => o.zone === 'battlefield' && o.controller === p))),
-      );
       setMenu(null);
       setChoicesFor(null);
       setShowExamples(false);
@@ -380,6 +376,13 @@ export function App() {
   /** passo dell'esempio corrispondente alla condizione attuale (-1 se l'utente ha cambiato qualcosa) */
   const exIdx = ex ? ex.steps.findIndex((st) => st.game === g) : -1;
   const exBadges = exIdx >= 0 ? ex!.steps[exIdx].badges : {};
+  const exTags = exIdx >= 0 ? ex!.steps[exIdx].tags : {};
+  // negli esempi, ad ogni passo si chiudono i campi di battaglia senza permanenti
+  useEffect(() => {
+    if (exIdx < 0) return;
+    const st = ex!.steps[exIdx].game;
+    setCollapsed(st.players.filter((p) => !st.objs.some((o) => o.zone === 'battlefield' && o.controller === p)));
+  }, [exIdx, ex]);
 
   function resetApp() {
     if (!window.confirm(t('resetConfirm'))) return;
@@ -1246,6 +1249,9 @@ export function App() {
       </button>
       {o.token && <span class="token-tag">{t('token')}</span>}
       {exBadges[o.uid] !== undefined && o.zone === 'battlefield' && <span class="pt-badge">{pick(exBadges[o.uid], lang)}</span>}
+      {exTags[o.uid] !== undefined && o.zone === 'battlefield' && (
+        <span class="ex-tag">{fillCards(pick(exTags[o.uid], lang), ex!.cards)}</span>
+      )}
       {o.counters && Object.keys(o.counters).length > 0 && (
         <span class="counters">
           {Object.entries(o.counters).map(([k, v]) => (
@@ -1977,12 +1983,11 @@ export function App() {
           </div>
           {exOpen && (
             <div class="ex-body">
-              <p class="ex-sub">{pick(ex.def.sub, lang)}</p>
               {exIdx < 0 ? (
                 <p>{t('exFree')}</p>
               ) : (
                 <>
-                  {exIdx < ex.steps.length - 1 && (
+                  {exIdx === 0 && (
                     <p class="ex-hint">
                       <Icon d={FORWARD} size={14} /> {t('exHint')}
                     </p>
@@ -2512,6 +2517,7 @@ export function App() {
           steps={
             [
               { target: '', title: 'tour1Title', text: 'tour1Text', lang: true },
+              { target: narrow ? '[data-zoom]' : '.zoom-btns', title: 'tourZoomTitle', text: narrow ? 'tourZoomPhone' : 'tourZoomPc' },
               { target: narrow ? '.text-btn' : '.search-row .search', title: 'tour1Title', text: 'tour1Text' },
               { target: '.history-bar', title: 'tour2Title', text: 'tour2Text' },
               { target: '.players-select', title: 'tour3Title', text: 'tour3Text' },
