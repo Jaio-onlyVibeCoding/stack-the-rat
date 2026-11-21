@@ -1,12 +1,14 @@
 import { createPortal } from 'preact/compat';
 import { useEffect, useState } from 'preact/hooks';
-import { useI18n, type Key } from './i18n';
+import { LANGS, setLang, useI18n, type Key } from './i18n';
 
 /** Un passo della guida: elemento da evidenziare (selettore CSS), titolo e testo. */
 export interface TourStep {
   target: string;
   title: Key;
   text: Key;
+  /** passo speciale: scelta della lingua, con testi in tutte le lingue */
+  lang?: boolean;
 }
 
 interface Rect {
@@ -29,7 +31,7 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
   // Posizione dell'elemento evidenziato; si aggiorna se lo schermo cambia (rotazione, tastiera…)
   useEffect(() => {
     const measure = () => {
-      const el = document.querySelector<HTMLElement>(step.target);
+      const el = step.target ? document.querySelector<HTMLElement>(step.target) : null;
       if (!el) return setRect(null);
       el.scrollIntoView({ block: 'nearest' });
       const r = el.getBoundingClientRect();
@@ -63,7 +65,7 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
   const last = i === steps.length - 1;
 
   return createPortal(
-    <div class="tour" role="dialog" aria-modal="true" aria-label={t(step.title)}>
+    <div class="tour" role="dialog" aria-modal="true" aria-label={step.lang ? 'Language' : t(step.title)}>
       {rect ? (
         <div
           class="tour-spot"
@@ -81,8 +83,32 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
         <p class="tour-count">
           {i + 1} / {steps.length}
         </p>
-        <h2>{t(step.title)}</h2>
-        <p>{t(step.text)}</p>
+        {step.lang ? (
+          <>
+            <h2>Choose your language · Scegli la lingua</h2>
+            <p>You can change it later from the menu. · Potrai cambiarla dopo dal menu.</p>
+            <div class="tour-langs">
+              {LANGS.map((l) => (
+                <button
+                  key={l.code}
+                  type="button"
+                  class="primary"
+                  onClick={() => {
+                    setLang(l.code);
+                    setI(i + 1);
+                  }}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <h2>{t(step.title)}</h2>
+            <p>{t(step.text)}</p>
+          </>
+        )}
         <div class="tour-actions">
           <button type="button" class="tour-skip" onClick={onClose}>
             {t('tourSkip')}
@@ -92,9 +118,11 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => voi
               {t('tourBack')}
             </button>
           )}
-          <button type="button" class="primary" onClick={() => (last ? onClose() : setI(i + 1))}>
-            {last ? t('tourDone') : t('tourNext')}
-          </button>
+          {!step.lang && (
+            <button type="button" class="primary" onClick={() => (last ? onClose() : setI(i + 1))}>
+              {last ? t('tourDone') : t('tourNext')}
+            </button>
+          )}
         </div>
       </div>
     </div>,

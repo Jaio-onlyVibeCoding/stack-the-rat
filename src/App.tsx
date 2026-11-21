@@ -136,6 +136,55 @@ export function App() {
       return false;
     }
   };
+  /** zona in cui aggiungere la carta cercata (tieni premuto su una zona) */
+  const [addTarget, setAddTarget] = useState<string | null>(null);
+  const longPress = useRef<{ timer: number; x: number; y: number } | null>(null);
+  function onZonePointerDown(e: PointerEvent) {
+    if (targeting !== null || picking) return;
+    const el = e.target as Element;
+    // solo sullo spazio vuoto di una zona: non su carte, pulsanti o campi
+    if (el.closest('.perm, .tile, .pile-card, button, input, select, a, .priority, .panel-head')) return;
+    const zone = el.closest<HTMLElement>('[data-drop]');
+    if (!zone) return;
+    const key = zone.dataset.drop!;
+    const x = e.clientX;
+    const y = e.clientY;
+    const cancel = () => {
+      if (longPress.current) clearTimeout(longPress.current.timer);
+      longPress.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', cancel);
+      window.removeEventListener('pointercancel', cancel);
+    };
+    const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - x, ev.clientY - y) > 10) cancel();
+    };
+    const timer = window.setTimeout(() => {
+      cancel();
+      try {
+        navigator.vibrate?.(15);
+      } catch {}
+      setAddTarget(key);
+      setSearchOpen(true);
+      setTimeout(() => document.getElementById('card-search')?.focus(), 50);
+    }, 550);
+    longPress.current = { timer, x, y };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', cancel);
+    window.addEventListener('pointercancel', cancel);
+  }
+  /** Nome leggibile della zona di destinazione */
+  function zoneLabel(key: string): string {
+    const [kind, arg] = key.split(':');
+    const p = arg as PlayerId;
+    if (kind === 'bf') return tr('battlefieldOf', { p });
+    if (kind === 'gy') return tr('graveyardOf', { p });
+    if (kind === 'hand') return tr('handOf', { p });
+    if (kind === 'lib') return tr('libraryTopOf', { p });
+    if (kind === 'exile') return t('exileZone');
+    return `${t('stackZone')} (${g.priority ?? g.active})`;
+  }
+
   /** guida al primo avvio (si può rivedere dal menu) */
   const [tourOpen, setTourOpen] = useState(false);
   useEffect(() => {
@@ -507,22 +556,28 @@ export function App() {
   }
 
   function cast(controller: PlayerId) {
-    if (!preview || g.resolving !== null || !guard(controller) || !sorcerySpeedOk(preview, controller)) return;
+    if (!preview) return;
+    if (castCard(preview, controller)) setPreview(null);
+  }
+
+  /** Lancia una carta (in pila, controllata da controller). Restituisce false se non è permesso. */
+  function castCard(card: Card, controller: PlayerId): boolean {
+    if (g.resolving !== null || !guard(controller) || !sorcerySpeedOk(card, controller)) return false;
     const uid = newUid();
     // CR 117.3c: chi lancia una magia riceve di nuovo la priorità; i passaggi precedenti non contano più
     commit(
       {
         ...g,
-        stack: [...g.stack, { uid, card: preview, owner: controller, controller, targets: [], kind: 'spell' }],
+        stack: [...g.stack, { uid, card, owner: controller, controller, targets: [], kind: 'spell' }],
         priority: controller,
         passed: [],
       },
-      tr('logCast', { p: controller, card: preview.printedName }),
+      tr('logCast', { p: controller, card: card.printedName }),
     );
     setShowExamples(false);
     // CR 601.2b: modalità, X, costi e metà si scelgono subito dopo l'annuncio
-    if (needsChoices(preview)) setChoicesFor(uid);
-    setPreview(null);
+    if (needsChoices(card)) setChoicesFor(uid);
+    return true;
   }
 
   /** Nome mostrato di un oggetto in pila: la faccia lanciata, se scelta. */
@@ -615,6 +670,27 @@ export function App() {
     );
     setAbilityPick(null);
     setPreview(null);
+    setShowExamples(false);
+  }
+
+  /** Tieni premuto su una zona → ricerca → la carta scelta va direttamente lì. */
+  function addToZone(card: Card, key: string) {
+    const [kind, arg] = key.split(':');
+    const p = arg as PlayerId;
+    if (kind === 'stack' || kind === 'stackpos') {
+      castCard(card, g.priority ?? g.active);
+      return;
+    }
+    const zone: Zone | null =
+      kind === 'bf' ? 'battlefield' : kind === 'gy' ? 'graveyard' : kind === 'hand' ? 'hand' : kind === 'lib' ? 'library' : kind === 'exile' ? 'exile' : null;
+    if (!zone) return;
+    const owner = kind === 'exile' ? g.active : p;
+    commit(
+      { ...g, objs: [...g.objs, { uid: newUid(), card, owner, controller: owner, zone }] },
+      zone === 'battlefield'
+        ? tr('logBattlefield', { p: owner, card: card.printedName })
+        : tr('logMove', { card: card.printedName, where: whereLabel(zone, owner) }),
+    );
     setShowExamples(false);
   }
 
@@ -1303,7 +1379,11 @@ export function App() {
   const menuObj = menu ? g.objs.find((o) => o.uid === menu.uid) : undefined;
 
   return (
-    <main class={`shell${targeting !== null || picking ? ' targeting' : ''}`} onClick={onBackgroundTap}>
+    <main
+      class={`shell${targeting !== null || picking ? ' targeting' : ''}`}
+      onClick={onBackgroundTap}
+      onPointerDown={onZonePointerDown}
+    >
       <header class="top">
         <h1>Stack The Rat</h1>
         {narrow && (
@@ -1431,6 +1511,23 @@ export function App() {
         </div>
       )}
 
+      {addTarget && targeting === null && !picking && (
+        <div class="add-target">
+          <span>
+            {t('addTo')} <b>{zoneLabel(addTarget)}</b>
+          </span>
+          <button
+            type="button"
+            aria-label={t('close')}
+            onClick={() => {
+              setAddTarget(null);
+              if (narrow) setSearchOpen(false);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {(!narrow || searchOpen || targeting !== null || picking) && (
         <div class="search-row">
           {picking ? (
@@ -1441,14 +1538,25 @@ export function App() {
             <CardSearch
               autoFocus={narrow}
               onPick={(c) => {
-                setPreview(c);
+                if (addTarget) {
+                  addToZone(c, addTarget);
+                  setAddTarget(null);
+                } else setPreview(c);
                 setSearchOpen(false);
               }}
             />
           )}
           {narrow ? (
             targeting === null && !picking && (
-              <button type="button" class="icon-btn" aria-label={t('close')} onClick={() => setSearchOpen(false)}>
+              <button
+                type="button"
+                class="icon-btn"
+                aria-label={t('close')}
+                onClick={() => {
+                  setSearchOpen(false);
+                  setAddTarget(null);
+                }}
+              >
                 <Icon d={CROSS} size={16} />
               </button>
             )
@@ -2283,6 +2391,7 @@ export function App() {
           onClose={closeTour}
           steps={
             [
+              { target: '', title: 'tour1Title', text: 'tour1Text', lang: true },
               { target: narrow ? '.text-btn' : '.search-row .search', title: 'tour1Title', text: 'tour1Text' },
               { target: '.history-bar', title: 'tour2Title', text: 'tour2Text' },
               { target: '.players-select', title: 'tour3Title', text: 'tour3Text' },
