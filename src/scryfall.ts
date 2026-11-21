@@ -168,7 +168,7 @@ export async function suggest(q: string, signal?: AbortSignal): Promise<Suggesti
 const cache = new Map<string, Card>();
 
 /**
- * Carta per nome esatto: la prima stampa (la più vecchia) nella lingua indicata;
+ * Carta per nome esatto: la stampa più leggibile (moderna, normale) nella lingua indicata;
  * se non esiste, usa la versione inglese.
  */
 export async function getCard(name: string, scryLang: string): Promise<Card | null> {
@@ -177,17 +177,23 @@ export async function getCard(name: string, scryLang: string): Promise<Card | nu
   if (hit) return hit;
 
   let card: Card | null = null;
-  // Prima stampa (la più vecchia) nella lingua richiesta, con immagine; poi in inglese
+  // Stampa più leggibile: la più recente con cornice moderna (2015), bordo nero, testo vicino all'Oracle.
+  // Escluse Secret Lair, promo, versioni speciali (showcase, borderless, full art), digitali e da collezione.
+  // Ordine: moderna nella lingua scelta → moderna in inglese → normale (lingua, inglese) → qualsiasi.
   const hasImg = (c: RawCard) => !!(c.image_uris || c.card_faces?.[0]?.image_uris);
-  for (const l of [...new Set([scryLang || 'en', 'en'])]) {
-    const q = encodeURIComponent(`!"${name}" lang:${l} -is:digital -is:oversized -st:memorabilia -st:token`);
-    const r = await get<{ data: RawCard[] }>(`/cards/search?q=${q}&unique=prints&order=released&dir=asc`).catch(() => null);
-    // Solo carte con lo stesso nome completo: "!" di Scryfall trova anche carte che hanno
-    // quel nome su una faccia sola (es. Emeritus of Conflict // Lightning Bolt)
-    const exact = r?.data?.find((c) => c.name === name && hasImg(c));
-    if (exact) {
-      card = toCard(exact);
-      break;
+  const base = '-is:promo -is:boosterfun -is:fullart -is:textless -is:oversized -st:memorabilia -st:token -st:funny';
+  const tries = [`frame:2015 border:black -set:sld ${base}`, `-set:sld ${base}`, ''];
+  outer: for (const extra of tries) {
+    for (const l of [...new Set([scryLang || 'en', 'en'])]) {
+      const q = encodeURIComponent(`!"${name}" lang:${l} game:paper ${extra}`.trim());
+      const r = await get<{ data: RawCard[] }>(`/cards/search?q=${q}&unique=prints&order=released&dir=desc`).catch(() => null);
+      // Solo carte con lo stesso nome completo: "!" di Scryfall trova anche carte che hanno
+      // quel nome su una faccia sola (es. Emeritus of Conflict // Lightning Bolt)
+      const exact = r?.data?.find((c) => c.name === name && hasImg(c));
+      if (exact) {
+        card = toCard(exact);
+        break outer;
+      }
     }
   }
   if (!card) {
