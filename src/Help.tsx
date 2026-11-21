@@ -17,9 +17,9 @@ function Section({ title, open, onToggle, children }: { title: string; open: boo
 }
 
 /** Finestra di aiuto: lancio di magie e abilità, APNAP, combattimento, link alle regole. */
-export function Help({ onClose }: { onClose: () => void }) {
+export function Help({ onClose, onExamples }: { onClose: () => void; onExamples?: () => void }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState<Record<string, boolean>>({ cast: true, apnap: false, combat: false });
+  const [open, setOpen] = useState<Record<string, boolean>>({ cast: true, apnap: false, combat: false, layers: false });
   const toggle = (k: string) => setOpen({ ...open, [k]: !open[k] });
   const steps = (k: Key) => t(k).split('|');
   const letters = 'abcdefghi';
@@ -63,6 +63,35 @@ export function Help({ onClose }: { onClose: () => void }) {
               <li key={i}>{step}</li>
             ))}
           </ol>
+        </Section>
+        <Section title={t('helpLayers')} open={open.layers} onToggle={() => toggle('layers')}>
+          <p>{t('helpLayersIntro')}</p>
+          <table class="ex-layers help-layers">
+            <tbody>
+              {steps('helpLayersList').map((row) => {
+                const [l, d] = row.split('=');
+                return (
+                  <tr key={l}>
+                    <th scope="row">L-{l}</th>
+                    <td>{d}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <h3>{t('helpLayersOrder')}</h3>
+          <ol>
+            {steps('helpLayersRules').map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          <h3>{t('helpLayersInApp')}</h3>
+          <p>{t('helpLayersApp')}</p>
+          {onExamples && (
+            <button type="button" class="secondary" onClick={onExamples}>
+              {t('examples')}
+            </button>
+          )}
         </Section>
         <h3>{t('rulesLinks')}</h3>
         <ul class="help-links">

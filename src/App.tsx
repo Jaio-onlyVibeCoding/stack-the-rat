@@ -2572,7 +2572,7 @@ export function App() {
         </div>
       )}
 
-      {help && <Help onClose={() => toggleHelp(false)} />}
+      {help && <Help onClose={() => toggleHelp(false)} onExamples={() => setExListOpen(true)} />}
 
       {tourOpen && (
         <Tour
