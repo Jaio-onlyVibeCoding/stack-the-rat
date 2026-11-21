@@ -181,13 +181,13 @@ export async function getCard(name: string, scryLang: string): Promise<Card | nu
   let card: Card | null = null;
   // Stampa più leggibile: la più recente con cornice moderna (2015), bordo nero, testo vicino all'Oracle.
   // Escluse Secret Lair, promo, versioni speciali (showcase, borderless, full art), digitali e da collezione.
-  // Ordine: moderna nella lingua scelta → moderna in inglese → normale (lingua, inglese) → qualsiasi.
+  // Priorità alla lingua: moderna → normale → qualsiasi nella lingua scelta; poi lo stesso in inglese.
   const hasImg = (c: RawCard) =>
     !!(c.image_uris || c.card_faces?.[0]?.image_uris) && c.image_status !== 'missing' && c.image_status !== 'placeholder';
   const base = '-is:promo -is:boosterfun -is:fullart -is:textless -is:oversized -st:memorabilia -st:token -st:funny';
   const tries = [`frame:2015 border:black -set:sld ${base}`, `-set:sld ${base}`, ''];
-  outer: for (const extra of tries) {
-    for (const l of [...new Set([scryLang || 'en', 'en'])]) {
+  outer: for (const l of [...new Set([scryLang || 'en', 'en'])]) {
+    for (const extra of tries) {
       const q = encodeURIComponent(`!"${name}" lang:${l} game:paper ${extra}`.trim());
       const r = await get<{ data: RawCard[] }>(`/cards/search?q=${q}&unique=prints&order=released&dir=desc`).catch(() => null);
       // Solo carte con lo stesso nome completo: "!" di Scryfall trova anche carte che hanno
