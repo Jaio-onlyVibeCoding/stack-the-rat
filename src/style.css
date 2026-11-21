@@ -843,7 +843,7 @@ input { width: 100%; }
 .ex-sub { color: var(--muted); font-size: 12px; }
 .ex-layers { border-collapse: collapse; width: 100%; margin-top: 4px; }
 .ex-layers th, .ex-layers td { border-top: 1px solid var(--line); padding: 3px 6px; text-align: start; vertical-align: top; }
-.ex-layers th { color: var(--accent); width: 2.5em; font-variant-numeric: tabular-nums; }
+.ex-layers th { color: var(--accent); width: 3.2em; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pt-badge {
   position: absolute; z-index: 3; inset-inline-end: 2px; bottom: 2px;
   background: #fff; color: #111; font-size: 12px; font-weight: 800; padding: 0 4px; border-radius: 4px;
