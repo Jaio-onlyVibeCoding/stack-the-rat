@@ -29,6 +29,8 @@ interface RawFace {
   oracle_text?: string;
   printed_text?: string;
   image_uris?: { normal: string; art_crop: string };
+  power?: string;
+  toughness?: string;
 }
 
 interface RawCard extends RawFace {
@@ -53,6 +55,8 @@ export interface Face {
   image?: string;
   /** Se una magia lanciata con questa faccia entra sul campo di battaglia */
   isPermanent: boolean;
+  power?: string;
+  toughness?: string;
 }
 
 export interface Card {
@@ -79,6 +83,9 @@ export interface Card {
   keywords: string[];
   /** Pagina della carta su scryfall.com */
   scryfallUri: string;
+  /** Forza e costituzione stampate (del fronte) */
+  power?: string;
+  toughness?: string;
   /** Tipo inglese (Oracle) del fronte */
   oracleType: string;
 }
@@ -98,6 +105,8 @@ export function toCard(r: RawCard): Card {
     oracleText: x.oracle_text ?? '',
     image: x.image_uris?.normal,
     isPermanent: PERMANENT_TYPES.test(x.type_line ?? ''),
+    power: x.power,
+    toughness: x.toughness,
   }));
   // Nome stampato: per le carte con più facce lo ricostruiamo dalle facce
   const printedName =
@@ -120,6 +129,8 @@ export function toCard(r: RawCard): Card {
     keywords: r.keywords ?? [],
     scryfallUri: r.scryfall_uri,
     oracleType: f?.type_line ?? r.type_line ?? '',
+    power: r.power ?? f?.power,
+    toughness: r.toughness ?? f?.toughness,
   };
 }
 

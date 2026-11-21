@@ -861,3 +861,32 @@ input { width: 100%; }
   background: #3d6fd8; color: #fff; font-size: 9px; font-weight: 700; line-height: 1.25; padding: 0 3px; border-radius: 4px;
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere;
 }
+
+/* ---------- Spunta Layers: effetti continui ---------- */
+.effects-sheet .ex-layers td.pt { width: 3.5em; text-align: end; font-weight: 700; font-variant-numeric: tabular-nums; }
+.effects-sheet .ex-layers small { color: var(--muted); }
+.effects-sheet .muted { color: var(--muted); }
+.effects-sheet .small { font-size: 12px; margin: 4px 0 0; }
+.effects-result { margin: 0; font-size: 14px; }
+.effects-result b { font-size: 16px; }
+.effects-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.effects-list li { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.effects-list .eff-l { color: var(--accent); font-weight: 700; min-width: 3em; }
+.effects-list .eff-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.effects-list button {
+  width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; cursor: pointer;
+}
+.effects-list button:disabled { opacity: .3; cursor: default; }
+.effects-list button.del { color: var(--danger); }
+.effects-form fieldset { display: grid; gap: 8px; }
+.eff-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.eff-row select { flex: 1; }
+.eff-pt { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.eff-pt label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.eff-toggles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.eff-toggles .toggle {
+  min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; cursor: pointer; font: inherit; font-size: 13px;
+}
+.eff-toggles .toggle.on { border-color: var(--accent); color: var(--accent); }
+.effects-form .secondary { margin-top: 0; }
+.pt-badge.calc { background: #f2c14e; }

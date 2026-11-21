@@ -19,6 +19,24 @@ export type Zone = 'battlefield' | 'graveyard' | 'exile' | 'library' | 'hand';
 export type Destination = Zone | 'stack' | 'libraryBottom';
 
 /** Carta (o token) sul campo di battaglia, nel cimitero o in esilio. */
+/** Layer e sottolayer degli effetti continui (CR 613.1, 613.4) */
+export type LayerId = '1a' | '1b' | '2' | '3' | '4' | '5' | '6' | '7a' | '7b' | '7c' | '7d';
+export const LAYER_IDS: LayerId[] = ['1a', '1b', '2', '3', '4', '5', '6', '7a', '7b', '7c', '7d'];
+
+/** Effetto continuo inserito a mano. Il timestamp è l'ordine nell'elenco (CR 613.7). */
+export interface Effect {
+  id: number;
+  layer: LayerId;
+  text: string;
+  /** static = abilità statica (604); spell = effetto di una magia o abilità che si risolve (611.2) */
+  source: 'static' | 'spell';
+  /** fino alla fine del turno: finisce nella sottofase di cancellazione (514.2) */
+  eot?: boolean;
+  /** L-7a/7b: imposta; L-7c: modifica */
+  p?: number;
+  t?: number;
+}
+
 export interface CardObj {
   uid: number;
   card: Card;
@@ -40,6 +58,8 @@ export interface CardObj {
   counters?: Record<string, number>;
   /** Carta esiliata collegata a un permanente (es. Anello dell'Oblio): uid di quel permanente */
   linkedTo?: number;
+  /** Effetti continui inseriti con la spunta Layers */
+  effects?: Effect[];
 }
 
 /** Tipo di oggetto in pila: magia, abilità attivata (CR 602) o innescata (CR 603). */

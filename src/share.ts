@@ -6,16 +6,18 @@
 //   v1: una sola condizione di gioco (link creati prima dello storico condiviso; ancora leggibili)
 //   v2: elenco di condizioni [ora, messaggi, partita] + posizione attuale nello storico
 
-import { bumpUid, type Game, type PlayerId, type StackKind, type Zone } from './game';
+import { bumpUid, type Effect, type Game, type PlayerId, type StackKind, type Zone } from './game';
 import type { Choices } from './choices';
 import { fetchByIds, type Card } from './scryfall';
 
-/** Dati in più di una carta: attaccata a, carte sotto (mutare), segnalini, collegata a */
+/** Dati in più di una carta: attaccata a, carte sotto (mutare), segnalini, collegata a, effetti continui */
 interface Extra {
   a?: number;
   u?: [string, PlayerId][];
   c?: Record<string, number>;
   l?: number;
+  /** effetti continui */
+  e?: Effect[];
 }
 
 /** Una condizione di gioco in forma compatta */
@@ -73,6 +75,7 @@ const extraOf = (o: Game['objs'][number]): Extra | undefined => {
   if (o.under?.length) e.u = o.under.map((u) => [u.card.scryfallId, u.owner]);
   if (o.counters && Object.keys(o.counters).length) e.c = o.counters;
   if (o.linkedTo) e.l = o.linkedTo;
+  if (o.effects?.length) e.e = o.effects;
   return Object.keys(e).length ? e : undefined;
 };
 
@@ -137,6 +140,7 @@ function fromCompact(s: Compact, cards: Map<string, Card>): Game {
         under: x?.u?.filter((u) => cards.has(u[0])).map((u) => ({ card: cards.get(u[0])!, owner: u[1] })),
         counters: x?.c,
         linkedTo: x?.l,
+        effects: x?.e,
       })),
   };
 }

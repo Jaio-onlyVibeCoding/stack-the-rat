@@ -29,6 +29,8 @@ import { ChoicesSheet } from './ChoicesSheet';
 import { canChooseFace, chosenFace, costKeywords, hasX, parseModes, summarize, type Choices } from './choices';
 import { Help } from './Help';
 import { Tour, type TourStep } from './Tour';
+import { EffectsSheet } from './EffectsSheet';
+import { computeLayers } from './layers';
 import { EXAMPLES, buildExample, fillCards, pick, type BuiltStep, type ExampleDef } from './examples';
 import { StepPicker } from './StepPicker';
 import { CardViewer } from './CardViewer';
@@ -331,6 +333,25 @@ export function App() {
       return false;
     }
   });
+  /** spunta Layers: effetti continui inseriti a mano, ordinati e calcolati da STR */
+  const [layersOn, setLayersOn] = useState(() => {
+    try {
+      return localStorage.getItem('layers') === '1';
+    } catch {
+      return false;
+    }
+  });
+  function toggleLayers(on: boolean) {
+    setLayersOn(on);
+    try {
+      localStorage.setItem('layers', on ? '1' : '0');
+    } catch {}
+  }
+  const [effectsFor, setEffectsFor] = useState<number | null>(null);
+  /** fine turno: finiscono gli effetti "fino alla fine del turno" (CR 514.2) */
+  const endEot = (objs: CardObj[]) =>
+    objs.map((o) => (o.effects?.some((e) => e.eot) ? { ...o, effects: o.effects.filter((e) => !e.eot) } : o));
+  const hasEot = (objs: CardObj[]) => objs.some((o) => o.effects?.some((e) => e.eot));
   function togglePhases(on: boolean) {
     setPhases(on);
     try {
@@ -408,10 +429,12 @@ export function App() {
     setCopyAsk(null);
     // anche le impostazioni tornano a quelle iniziali
     try {
-      ['help', 'phases', 'lang'].forEach((k) => localStorage.removeItem(k));
+      ['help', 'phases', 'lang', 'layers'].forEach((k) => localStorage.removeItem(k));
     } catch {}
     setHelp(false);
     setPhases(false);
+    setLayersOn(false);
+    setEffectsFor(null);
     setLang(detect());
   }
 
@@ -1015,6 +1038,10 @@ export function App() {
     const msgs: string[] = [];
     if (step === STEP.cleanup) {
       msgs.push(t('logCleanup'));
+      if (hasEot(objs)) {
+        objs = endEot(objs);
+        msgs.push(t('logEffectsEnd'));
+      }
       step++;
     }
     if (step >= STEP_COUNT) {
@@ -1031,6 +1058,10 @@ export function App() {
     return { game: { ...base, objs, step, active, priority: active, passed: [] }, msgs };
   }
   function setStep(step: number) {
+    if (step === STEP.cleanup && hasEot(g.objs)) {
+      commit({ ...g, objs: endEot(g.objs), step, priority: g.active, passed: [] }, tr('logStepSet', { step: stepName(step) }), t('logEffectsEnd'));
+      return;
+    }
     commit({ ...g, step, priority: g.active, passed: [] }, tr('logStepSet', { step: stepName(step) }));
   }
 
@@ -1249,6 +1280,18 @@ export function App() {
       </button>
       {o.token && <span class="token-tag">{t('token')}</span>}
       {exBadges[o.uid] !== undefined && o.zone === 'battlefield' && <span class="pt-badge">{pick(exBadges[o.uid], lang)}</span>}
+      {layersOn && exBadges[o.uid] === undefined && o.zone === 'battlefield' && (o.effects?.length || o.counters?.['+1/+1'] || o.counters?.['-1/-1'])
+        ? (() => {
+            const r = computeLayers(o);
+            const txt = (o.effects ?? []).filter((e) => !e.layer.startsWith('7')).map((e) => e.text);
+            return (
+              <>
+                {r.pt && <span class="pt-badge calc">{`${r.pt[0]}/${r.pt[1]}`}</span>}
+                {txt.length > 0 && exTags[o.uid] === undefined && <span class="ex-tag">{txt.join(' · ')}</span>}
+              </>
+            );
+          })()
+        : null}
       {exTags[o.uid] !== undefined && o.zone === 'battlefield' && (
         <span class="ex-tag">{fillCards(pick(exTags[o.uid], lang), ex!.cards)}</span>
       )}
@@ -1695,6 +1738,10 @@ export function App() {
             <label class="help-toggle" title={t('phasesHelp')}>
               <input type="checkbox" checked={phases} onChange={(e) => togglePhases((e.target as HTMLInputElement).checked)} />
               {t('phases')}
+            </label>
+            <label class="help-toggle" title={t('layersHelp')}>
+              <input type="checkbox" checked={layersOn} onChange={(e) => toggleLayers((e.target as HTMLInputElement).checked)} />
+              {t('layers')}
             </label>
               </div>
             )}
@@ -2206,6 +2253,18 @@ export function App() {
                 <Icon d={COUNTER} size={16} /> {t('countersMenu')}
               </button>
             )}
+            {layersOn && menuObj.zone === 'battlefield' && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setEffectsFor(menuObj.uid);
+                  setMenu(null);
+                }}
+              >
+                <Icon d={LAYERS} size={16} /> {t('effectsMenu')}
+              </button>
+            )}
             {menuObj.zone === 'exile' && (
               <button
                 type="button"
@@ -2422,6 +2481,13 @@ export function App() {
           </section>
         </div>
       )}
+
+      {effectsFor !== null &&
+        (() => {
+          const eo = g.objs.find((x) => x.uid === effectsFor && x.zone === 'battlefield');
+          if (!eo) return null;
+          return <EffectsSheet obj={eo} onChange={(effects, msg) => setObj(eo, { effects }, msg)} onClose={() => setEffectsFor(null)} />;
+        })()}
 
       {counterFor !== null &&
         (() => {
