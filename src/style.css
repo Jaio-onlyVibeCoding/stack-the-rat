@@ -902,3 +902,5 @@ input { width: 100%; }
   background: var(--danger); color: #fff; font-weight: 600; cursor: pointer;
 }
 .help-layers { margin: 4px 0 8px; }
+/* carta coperta da un'altra nel gruppo (aura, equipaggiamento): l'occhio va in alto, a sinistra del menu ⋯ */
+.attach-group > .perm:not(:last-child) .eye { top: 1px; bottom: auto; inset-inline-start: auto; inset-inline-end: 32px; }
