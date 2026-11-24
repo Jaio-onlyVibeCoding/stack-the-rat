@@ -929,3 +929,6 @@ input { width: 100%; }
 .kw-toggle.on { border-color: var(--accent); color: var(--accent); background: #e0a43a1a; font-weight: 700; }
 .kw-counters { display: flex; flex-wrap: wrap; gap: 1px; }
 .kw-counters i { display: inline-flex; padding: 1px; border-radius: 4px; background: #f2c14e; color: #1a1408; }
+.tour-bubble p { white-space: pre-line; }
+.pc-group { display: inline-flex; align-items: center; flex: none; }
+.zone-btn.pc-step { padding: 0 4px; font-size: 15px; min-width: 18px; justify-content: center; }

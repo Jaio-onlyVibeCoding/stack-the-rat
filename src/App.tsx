@@ -89,6 +89,7 @@ const DUP = 'M8 8h11v13H8zM5 16V3h11';
 const LINK = 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1';
 const CLIP = 'M16 6l-7.5 7.5a2.1 2.1 0 0 0 3 3L19 9a4.2 4.2 0 0 0-6-6l-7.5 7.5a6.4 6.4 0 0 0 9 9L20 14';
 const MUTATE = 'M12 3l8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4';
+const PCOUNTER = 'M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5zM12 8v5M12 16.2v.3';
 const COUNTER = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v8M8 12h8';
 const LOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11';
 const UNLOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 6.8-1.2';
@@ -1441,16 +1442,28 @@ export function App() {
                 {(() => {
                   const first = g.pc?.[id]?.[0];
                   return (
-                    <button
-                      type="button"
-                      class={`zone-btn pc-btn${pcFor === id ? ' on' : ''}`}
-                      aria-label={`${t('playerCounters')} ${id}${first ? `: ${first[0]} ${first[1]}` : ''}`}
-                      title={first ? `${first[0]}: ${first[1]}` : t('playerCounters')}
-                      onClick={() => setPcFor(id)}
-                    >
-                      <Icon d={COUNTER} size={15} />
-                      {first ? first[1] : ''}
-                    </button>
+                    <span class="pc-group">
+                      {first && (
+                        <button type="button" class="zone-btn pc-step" aria-label={`− ${first[0]}`} title={`− ${first[0]}`} onClick={() => changePlayerCounter(id, first[0], -1)}>
+                          −
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        class={`zone-btn pc-btn${pcFor === id ? ' on' : ''}`}
+                        aria-label={`${t('playerCounters')} ${id}${first ? `: ${first[0]} ${first[1]}` : ''}`}
+                        title={first ? `${first[0]}: ${first[1]}` : t('playerCounters')}
+                        onClick={() => setPcFor(id)}
+                      >
+                        <Icon d={PCOUNTER} size={15} />
+                        {first ? first[1] : ''}
+                      </button>
+                      {first && (
+                        <button type="button" class="zone-btn pc-step" aria-label={`+ ${first[0]}`} title={`+ ${first[0]}`} onClick={() => changePlayerCounter(id, first[0], 1)}>
+                          +
+                        </button>
+                      )}
+                    </span>
                   );
                 })()}
                 {zoneButton(id, 'lib', LIBRARY, library(id).length, tr('libraryOf', { p: id }))}
@@ -2825,7 +2838,7 @@ export function App() {
           steps={
             [
               { target: '', title: 'tour1Title', text: 'tour1Text', lang: true },
-              { target: narrow ? '[data-zoom]' : '.zoom-btns', title: 'tourZoomTitle', text: narrow ? 'tourZoomPhone' : 'tourZoomPc' },
+              { target: '.zone-head', title: 'tourZoomTitle', text: narrow ? 'tourZoomPhone' : 'tourZoomPc' },
               { target: narrow ? '.text-btn' : '.search-row .search', title: 'tour1Title', text: 'tour1Text' },
               { target: '.history-bar', title: 'tour2Title', text: 'tour2Text' },
               { target: '.players-select', title: 'tour3Title', text: 'tour3Text' },
