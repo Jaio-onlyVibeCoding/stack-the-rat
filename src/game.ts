@@ -102,6 +102,8 @@ export interface Game {
   resolving: number | null;
   /** sottofase/fase attuale (indice in 0..11, vedi STEP_COUNT), usata se "Fasi e sottofasi" è attivo */
   step: number;
+  /** segnalini dei giocatori, in ordine: il primo è quello mostrato nella barra del giocatore */
+  pc?: Partial<Record<PlayerId, [string, number][]>>;
 }
 
 /** 12 momenti del turno (CR 500): STAP, mantenimento, acquisizione, principale 1, 5 di combattimento, principale 2, finale, cancellazione. */

@@ -337,6 +337,22 @@ export function App() {
   /** effetto continuo copiato (copia/incolla tra carte) */
   const [effectClip, setEffectClip] = useState<Effect | null>(null);
   const [effectsFor, setEffectsFor] = useState<number | null>(null);
+  /** segnalini del giocatore: finestra aperta per… */
+  const [pcFor, setPcFor] = useState<PlayerId | null>(null);
+  const [pcCustom, setPcCustom] = useState('');
+  function setPlayerCounters(p: PlayerId, list: [string, number][], msg: string) {
+    const pc = { ...(g.pc ?? {}), [p]: list };
+    if (!list.length) delete pc[p];
+    commit({ ...g, pc }, msg);
+  }
+  function changePlayerCounter(p: PlayerId, name: string, d: number) {
+    const list = [...(g.pc?.[p] ?? [])];
+    const i = list.findIndex(([n]) => n === name);
+    const v = Math.max(0, (i >= 0 ? list[i][1] : 0) + d);
+    if (i >= 0) list[i] = [name, v];
+    else list.push([name, v]);
+    setPlayerCounters(p, list, tr('logPlayerCounter', { p, name, n: String(v) }));
+  }
   /** menu "Imposta F/C": uid dell'oggetto e valori nei campi */
   const [ptFor, setPtFor] = useState<{ uid: number; p: string; t: string; eot: boolean } | null>(null);
   /** fine turno: finiscono gli effetti "fino alla fine del turno" (CR 514.2) */
@@ -425,6 +441,7 @@ export function App() {
     setHelp(false);
     setPhases(false);
     setEffectClip(null);
+    setPcFor(null);
     setEffectsFor(null);
     setLang(detect());
   }
@@ -1397,6 +1414,21 @@ export function App() {
                     </button>
                   </div>
                 )}
+                {(() => {
+                  const first = g.pc?.[id]?.[0];
+                  return (
+                    <button
+                      type="button"
+                      class={`zone-btn pc-btn${pcFor === id ? ' on' : ''}`}
+                      aria-label={`${t('playerCounters')} ${id}${first ? `: ${first[0]} ${first[1]}` : ''}`}
+                      title={first ? `${first[0]}: ${first[1]}` : t('playerCounters')}
+                      onClick={() => setPcFor(id)}
+                    >
+                      <Icon d={COUNTER} size={15} />
+                      {first ? first[1] : ''}
+                    </button>
+                  );
+                })()}
                 {zoneButton(id, 'lib', LIBRARY, library(id).length, tr('libraryOf', { p: id }))}
                 {zoneButton(id, 'hand', HAND, hand(id).length, tr('handOf', { p: id }))}
                 {zoneButton(id, 'gy', TOMBSTONE, gy.length, tr('graveyardOf', { p: id }))}
@@ -2552,6 +2584,86 @@ export function App() {
               clip={effectClip}
               onCopy={setEffectClip}
             />
+          );
+        })()}
+
+      {pcFor !== null &&
+        (() => {
+          const p = pcFor;
+          const list = g.pc?.[p] ?? [];
+          const presets = t('playerCounterNames').split('|').filter((n) => !list.some(([x]) => x === n));
+          const move = (i: number, dir: -1 | 1) => {
+            const j = i + dir;
+            if (j < 0 || j >= list.length) return;
+            const next = [...list];
+            [next[i], next[j]] = [next[j], next[i]];
+            setPlayerCounters(p, next, tr('logPlayerCounter', { p, name: next[0][0], n: `(${t('playerCountersShown')})` }));
+          };
+          return (
+            <div class="sheet-backdrop" onClick={() => setPcFor(null)}>
+              <section class="sheet choices-sheet" onClick={(e) => e.stopPropagation()}>
+                <h2>{tr('playerCountersTitle', { p })}</h2>
+                <p class="muted small">{t('playerCountersHint')}</p>
+                {list.length > 0 && (
+                  <div class="counter-list pc-list">
+                    {list.map(([n, v], i) => (
+                      <div key={n} class={`counter-row has${i === 0 ? ' shown' : ''}`}>
+                        <span>
+                          {n}
+                          {i === 0 && <small class="pc-shown">{t('playerCountersShown')}</small>}
+                        </span>
+                        <button type="button" class="mv" aria-label={t('moveUp')} disabled={i === 0} onClick={() => move(i, -1)}>
+                          ↑
+                        </button>
+                        <button type="button" class="mv" aria-label={t('moveDown')} disabled={i === list.length - 1} onClick={() => move(i, 1)}>
+                          ↓
+                        </button>
+                        <button type="button" aria-label={`− ${n}`} onClick={() => changePlayerCounter(p, n, -1)} disabled={!v}>
+                          −
+                        </button>
+                        <b>{v}</b>
+                        <button type="button" aria-label={`+ ${n}`} onClick={() => changePlayerCounter(p, n, 1)}>
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          class="mv del"
+                          aria-label={t('remove')}
+                          onClick={() => setPlayerCounters(p, list.filter((_, k) => k !== i), tr('logPlayerCounter', { p, name: n, n: '✕' }))}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p class="label">{t('playerCountersAdd')}</p>
+                <div class="chips pc-presets">
+                  {presets.map((n) => (
+                    <button key={n} type="button" class="chip outline small" onClick={() => changePlayerCounter(p, n, 1)}>
+                      + {n}
+                    </button>
+                  ))}
+                </div>
+                <form
+                  class="counter-custom"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const n = pcCustom.trim();
+                    if (n) changePlayerCounter(p, n, 1);
+                    setPcCustom('');
+                  }}
+                >
+                  <input type="text" value={pcCustom} placeholder={t('counterCustom')} onInput={(e) => setPcCustom((e.target as HTMLInputElement).value)} />
+                  <button type="submit" class="secondary">
+                    {t('addCounter')}
+                  </button>
+                </form>
+                <button type="button" class="close-btn" onClick={() => setPcFor(null)}>
+                  {t('close')}
+                </button>
+              </section>
+            </div>
           );
         })()}
 

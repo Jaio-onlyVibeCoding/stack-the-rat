@@ -34,6 +34,8 @@ interface Compact {
   g: Record<string, string>;
   /** sottofase */
   st?: number;
+  /** segnalini dei giocatori */
+  pc?: Game['pc'];
 }
 
 interface SharedV1 extends Compact {
@@ -90,6 +92,7 @@ function toCompact(g: Game): Compact {
     o: g.objs.map((o) => [o.uid, o.card.scryfallId, o.owner, o.controller, o.zone, o.token ? 1 : 0, o.tapped ? 1 : 0, o.prepared ? 1 : 0, o.flipped ? 1 : 0, extraOf(o)]),
     g: g.gone,
     st: g.step,
+    ...(g.pc && Object.keys(g.pc).length ? { pc: g.pc } : {}),
   };
 }
 
@@ -110,6 +113,7 @@ function fromCompact(s: Compact, cards: Map<string, Card>): Game {
     resolving: s.r,
     gone: s.g,
     step: s.st ?? 3,
+    ...(s.pc ? { pc: s.pc } : {}),
     stack: s.s
       .filter((x) => cards.has(x[1]))
       .map(([uid, id, owner, controller, targets, kind, text, choices, copy, returns]) => ({

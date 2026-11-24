@@ -904,3 +904,12 @@ input { width: 100%; }
 .help-layers { margin: 4px 0 8px; }
 /* carta coperta da un'altra nel gruppo (aura, equipaggiamento): l'occhio va in alto, a sinistra del menu ⋯ */
 .attach-group > .perm:not(:last-child) .eye { top: 1px; bottom: auto; inset-inline-start: auto; inset-inline-end: 32px; }
+/* segnalini dei giocatori */
+.pc-list .counter-row { grid-template-columns: 1fr 30px 30px 34px 30px 34px 30px; }
+.pc-list .counter-row.shown { border: 2px solid var(--accent); border-radius: 10px; padding: 4px 6px; background: #e0a43a1a; }
+.pc-list .counter-row:not(.shown) { padding: 0 8px; }
+.pc-list .counter-row span { overflow-wrap: anywhere; }
+.pc-shown { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--accent); }
+.pc-list .counter-row .del { color: var(--danger); }
+.pc-presets { flex-wrap: wrap; }
+.pc-btn { min-width: 22px; }
