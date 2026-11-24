@@ -2841,6 +2841,7 @@ export function App() {
               { target: '.zone-head', title: 'tourZoomTitle', text: narrow ? 'tourZoomPhone' : 'tourZoomPc' },
               { target: narrow ? '.text-btn' : '.search-row .search', title: 'tour1Title', text: 'tour1Text' },
               { target: '.history-bar', title: 'tour2Title', text: 'tour2Text' },
+              { target: narrow ? '.top .icon-btn' : '.share-btn', title: 'tourShareTitle', text: 'tourShareText' },
               { target: '.players-select', title: 'tour3Title', text: 'tour3Text' },
               { target: '.priority .pass', title: 'tour4Title', text: 'tour4Text' },
             ] as TourStep[]
