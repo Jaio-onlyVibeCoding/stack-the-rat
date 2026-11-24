@@ -204,7 +204,9 @@ export async function suggest(q: string, signal?: AbortSignal): Promise<Suggesti
 /** Pedine (ricerca "t:nome"): una voce per ogni pedina diversa (stesso nome, testo diverso) */
 export async function suggestTokens(q: string, signal?: AbortSignal): Promise<Suggestion[]> {
   const name = q.trim();
-  const query = `${name ? `name:"${name.replace(/"/g, '')}" ` : ''}(layout:token or layout:double_faced_token) -is:digital`;
+  // parola che inizia con il testo (es. "rat" → Rat, non Pirate); nomi inglesi
+  const re = name.replace(/[\\^$.*+?()[\]{}|/"]/g, '\\$&');
+  const query = `${name ? `name:/\\b${re}/ ` : ''}(layout:token or layout:double_faced_token) -is:digital`;
   const r = await get<{ data: RawCard[] }>(
     `/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=name&include_extras=true`,
     signal,
