@@ -42,6 +42,8 @@ interface RawCard extends RawFace {
   card_faces?: RawFace[];
   /** missing, placeholder ("immagine non disponibile"), lowres, highres_scan */
   image_status?: string;
+  oracle_id?: string;
+  colors?: string[];
 }
 
 /** Una faccia (o metà) di una carta con più parti: carta divisa, avventura, bifronte, preparazione. */
@@ -88,6 +90,8 @@ export interface Card {
   /** Forza e costituzione stampate (del fronte) */
   power?: string;
   toughness?: string;
+  /** Pedina (token): si mette solo sul campo di battaglia */
+  isToken?: boolean;
   /** Tipo inglese (Oracle) del fronte */
   oracleType: string;
 }
@@ -134,6 +138,7 @@ export function toCard(r: RawCard): Card {
     oracleType: f?.type_line ?? r.type_line ?? '',
     power: r.power ?? f?.power,
     toughness: r.toughness ?? f?.toughness,
+    isToken: r.layout === 'token' || r.layout === 'double_faced_token' || undefined,
   };
 }
 
@@ -142,6 +147,9 @@ export interface Suggestion {
   name: string;
   /** Nome stampato in un'altra lingua, se la ricerca ha trovato quello */
   printed?: string;
+  /** Pedine: id Scryfall (più pedine hanno lo stesso nome) e descrizione breve */
+  id?: string;
+  detail?: string;
 }
 
 /**
@@ -150,21 +158,28 @@ export interface Suggestion {
  * 2) ricerca con lang:any: trova anche i nomi stampati in altre lingue (es. "fulmine").
  */
 export async function suggest(q: string, signal?: AbortSignal): Promise<Suggestion[]> {
-  const [auto, intl] = await Promise.all([
+  // nomi con una parola che inizia con il testo (es. "rat" → "Pack Rat"), dalle carte più giocate
+  const re = q.trim().replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
+  const [auto, intl, words] = await Promise.all([
     get<{ data: string[] }>(`/cards/autocomplete?q=${encodeURIComponent(q)}`, signal),
     get<{ data: RawCard[] }>(
       `/cards/search?q=${encodeURIComponent(`${q} lang:any`)}&unique=cards&order=name`,
       signal,
       // la ricerca estesa è un extra: se fallisce restano i suggerimenti inglesi
     ).catch(() => null),
+    get<{ data: RawCard[] }>(`/cards/search?q=${encodeURIComponent(`name:/\\b${re}/`)}&unique=cards&order=edhrec`, signal).catch(
+      () => null,
+    ),
   ]);
   // Ordine: nome identico al testo, poi nomi che iniziano col testo, poi il resto
   const needle = q.trim().toLowerCase();
+  const wordStart = (n: string) => n.split(/[\s,'’-]+/).some((w) => w.startsWith(needle));
   const rank = (s: Suggestion) => {
     const names = [s.printed, s.name].filter(Boolean).map((n) => n!.toLowerCase());
     if (names.some((n) => n === needle)) return 0;
     if (names.some((n) => n.startsWith(needle))) return 1;
-    return 2;
+    if (names.some(wordStart)) return 2;
+    return 3;
   };
   const all: Suggestion[] = (auto?.data ?? []).map((name) => ({ name }));
   const seen = new Set(all.map((s) => s.name));
@@ -176,9 +191,47 @@ export async function suggest(q: string, signal?: AbortSignal): Promise<Suggesti
     seen.add(c.name);
     all.push({ name: c.name, printed: printed && printed !== c.name ? printed : undefined });
   }
+  for (const c of words?.data ?? []) {
+    if (seen.has(c.name)) continue;
+    seen.add(c.name);
+    all.push({ name: c.name });
+  }
   // sort è stabile: a parità di rango resta l'ordine di Scryfall
   const out = all.sort((a, b) => rank(a) - rank(b)).slice(0, 25);
   return out;
+}
+
+/** Pedine (ricerca "t:nome"): una voce per ogni pedina diversa (stesso nome, testo diverso) */
+export async function suggestTokens(q: string, signal?: AbortSignal): Promise<Suggestion[]> {
+  const name = q.trim();
+  const query = `${name ? `name:"${name.replace(/"/g, '')}" ` : ''}(layout:token or layout:double_faced_token) -is:digital`;
+  const r = await get<{ data: RawCard[] }>(
+    `/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=name&include_extras=true`,
+    signal,
+  ).catch(() => null);
+  return (r?.data ?? []).slice(0, 40).map((c) => {
+    const f = c.card_faces?.[0];
+    const type = (c.type_line ?? f?.type_line ?? '').replace(/^Token /, '');
+    const pt = c.power !== undefined ? ` ${c.power}/${c.toughness}` : '';
+    const color = (c.colors ?? []).join('') || 'C';
+    const text = (c.oracle_text ?? f?.oracle_text ?? '').split('\n')[0];
+    return { name: c.name, id: c.id, detail: `${color} · ${type}${pt}${text ? ` · ${text.slice(0, 60)}` : ''}` };
+  });
+}
+
+/** Pedina per id, nella lingua scelta se esiste una stampa con immagine */
+export async function getTokenCard(id: string, scryLang: string): Promise<Card | null> {
+  const r = await get<RawCard>(`/cards/${id}`).catch(() => null);
+  if (!r) return null;
+  if (scryLang && scryLang !== 'en' && r.oracle_id) {
+    const q = encodeURIComponent(`oracleid:${r.oracle_id} lang:${scryLang}`);
+    const loc = await get<{ data: RawCard[] }>(`/cards/search?q=${q}&unique=prints&include_extras=true&order=released&dir=desc`).catch(
+      () => null,
+    );
+    const hit = loc?.data?.find((c) => (c.image_uris || c.card_faces?.[0]?.image_uris) && c.image_status !== 'placeholder');
+    if (hit) return toCard(hit);
+  }
+  return toCard(r);
 }
 
 const cache = new Map<string, Card>();

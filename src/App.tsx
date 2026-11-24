@@ -734,6 +734,16 @@ export function App() {
   function addToZone(card: Card, key: string) {
     const [kind, arg] = key.split(':');
     const p = arg as PlayerId;
+    // una pedina esiste solo sul campo di battaglia (CR 111.8, 704.5d)
+    if (card.isToken) {
+      const owner = kind === 'bf' || kind === 'gy' || kind === 'hand' || kind === 'lib' ? p : g.priority ?? g.active;
+      commit(
+        { ...g, objs: [...g.objs, { uid: newUid(), card, owner, controller: owner, zone: 'battlefield', token: true }] },
+        tr('logNewToken', { p: owner, card: card.printedName }),
+      );
+      setShowExamples(false);
+      return;
+    }
     if (kind === 'stack' || kind === 'stackpos') {
       castCard(card, g.priority ?? g.active);
       return;
@@ -754,8 +764,8 @@ export function App() {
   function putOnBattlefield(controller: PlayerId) {
     if (!preview) return;
     commit(
-      { ...g, objs: [...g.objs, { uid: newUid(), card: preview, owner: controller, controller, zone: 'battlefield' }] },
-      tr('logBattlefield', { p: controller, card: preview.printedName }),
+      { ...g, objs: [...g.objs, { uid: newUid(), card: preview, owner: controller, controller, zone: 'battlefield', token: preview.isToken || undefined }] },
+      tr(preview.isToken ? 'logNewToken' : 'logBattlefield', { p: controller, card: preview.printedName }),
     );
     setPreview(null);
     setShowExamples(false);
@@ -2720,8 +2730,9 @@ export function App() {
             {preview.image && <img src={preview.image} alt={preview.printedName} />}
             <div class="sheet-body">
               {isFallback && <p class="status">{t('fallback')}</p>}
-              <p class="label">{t('toStack')}</p>
-              <div class="chips">
+              {preview.isToken && <p class="status">{t('tokenOnlyBf')}</p>}
+              {!preview.isToken && <p class="label">{t('toStack')}</p>}
+              {!preview.isToken && <div class="chips">
                 {g.players.map((p) => (
                   <button
                     key={p}
@@ -2734,7 +2745,7 @@ export function App() {
                     {p}
                   </button>
                 ))}
-              </div>
+              </div>}
               <p class="label">{t('toBattlefield')}</p>
               <div class="chips">
                 {g.players.map((p) => (

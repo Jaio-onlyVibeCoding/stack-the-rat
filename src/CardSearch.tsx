@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { getCard, suggest, type Card, type Suggestion } from './scryfall';
+import { getCard, getTokenCard, suggest, suggestTokens, type Card, type Suggestion } from './scryfall';
 import { langInfo, useI18n } from './i18n';
 
 type Status = 'idle' | 'loading' | 'empty' | 'error';
@@ -17,7 +17,9 @@ export function CardSearch({ onPick, autoFocus = false }: { onPick: (c: Card) =>
   // Aspetta 300 ms dopo l'ultima lettera prima di chiedere a Scryfall
   useEffect(() => {
     const query = q.trim();
-    if (query.length < 2) {
+    // "t:nome" cerca le pedine
+    const token = /^t:/i.test(query);
+    if (token ? query.length < 3 : query.length < 2) {
       setNames([]);
       setStatus('idle');
       return;
@@ -26,7 +28,7 @@ export function CardSearch({ onPick, autoFocus = false }: { onPick: (c: Card) =>
     const timer = setTimeout(async () => {
       setStatus('loading');
       try {
-        const res = await suggest(query, ac.signal);
+        const res = token ? await suggestTokens(query.slice(2), ac.signal) : await suggest(query, ac.signal);
         setNames(res);
         setStatus(res.length ? 'idle' : 'empty');
       } catch {
@@ -39,12 +41,13 @@ export function CardSearch({ onPick, autoFocus = false }: { onPick: (c: Card) =>
     };
   }, [q]);
 
-  async function pick(name: string) {
+  async function pick(n: Suggestion) {
     setNames([]);
     setQ('');
     setStatus('loading');
     try {
-      const card = await getCard(name, langInfo(lang).scryfall);
+      const l = langInfo(lang).scryfall;
+      const card = n.id ? await getTokenCard(n.id, l) : await getCard(n.name, l);
       if (card) onPick(card);
       setStatus(card ? 'idle' : 'empty');
     } catch {
@@ -72,10 +75,11 @@ export function CardSearch({ onPick, autoFocus = false }: { onPick: (c: Card) =>
       {names.length > 0 && (
         <ul class="suggestions">
           {names.map((n) => (
-            <li key={n.name}>
-              <button type="button" onClick={() => pick(n.name)}>
+            <li key={n.id ?? n.name}>
+              <button type="button" onClick={() => pick(n)}>
                 {n.printed ?? n.name}
                 {n.printed && <small>{n.name}</small>}
+                {n.detail && <small>{n.detail}</small>}
               </button>
             </li>
           ))}

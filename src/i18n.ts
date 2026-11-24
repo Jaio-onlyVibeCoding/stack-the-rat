@@ -18,7 +18,7 @@ export const LANGS: LangInfo[] = [
 
 const en = {
   searchLabel: 'Card name',
-  searchPlaceholder: 'Search a card, in any language…',
+  searchPlaceholder: 'Search a card, in any language (t: for tokens)…',
   loading: 'Loading…',
   error: 'Scryfall is not responding. Try again.',
   noResults: 'No cards found.',
@@ -351,6 +351,10 @@ const en = {
   finish: 'Resolution done',
   logCast: '{p} casts {card}.',
   logBattlefield: '{card} enters the battlefield under {p}.',
+  logNewToken: 'A {card} token is created under {p}.',
+  tokenOnlyBf: 'Token: it can only be on the battlefield (CR 111.8).',
+  helpAdd: 'Adding cards and tokens',
+  helpAddSteps: 'Type at least 2 letters in the search: names in any language, also in the middle of the name (e.g. "rat" finds Pack Rat).|Tokens: type t: followed by the name (e.g. t:rat, t:treasure). Tokens with the same name but different text are listed separately, with color, type, power/toughness and text.|A token can only be put on the battlefield: if it leaves, it ceases to exist (CR 111.8, 704.5d).|Long press an empty area of a zone (battlefield, graveyard, hand, library, exile): the search opens and the card goes directly there.',
   logPass: '{p} passes priority.',
   logGraveyard: "{card} is put into {p}'s graveyard.",
   logExile: '{card} ({p}) is exiled.',
@@ -368,7 +372,7 @@ type Dict = Record<Key, string>;
 
 const it: Dict = {
   searchLabel: 'Nome della carta',
-  searchPlaceholder: 'Cerca una carta, in qualsiasi lingua…',
+  searchPlaceholder: 'Cerca una carta, in qualsiasi lingua (t: per le pedine)…',
   loading: 'Caricamento…',
   error: 'Scryfall non risponde. Riprova.',
   noResults: 'Nessuna carta trovata.',
@@ -701,6 +705,10 @@ const it: Dict = {
   finish: 'Risoluzione completata',
   logCast: '{p} lancia {card}.',
   logBattlefield: '{card} entra sul campo di battaglia di {p}.',
+  logNewToken: 'Viene creata una pedina {card} sotto il controllo di {p}.',
+  tokenOnlyBf: 'Pedina: può stare solo sul campo di battaglia (CR 111.8).',
+  helpAdd: 'Aggiungere carte e pedine',
+  helpAddSteps: 'Scrivi almeno 2 lettere nella ricerca: nomi in qualsiasi lingua, anche a metà del nome (es. "rat" trova Pack Rat).|Pedine (token): scrivi t: seguito dal nome (es. t:ratto, t:rat, t:treasure). Pedine con lo stesso nome ma testo diverso compaiono separate, con colore, tipo, forza/costituzione e testo.|Una pedina si mette solo sul campo di battaglia: se lo lascia, cessa di esistere (CR 111.8, 704.5d).|Tieni premuto su uno spazio vuoto di una zona (campo di battaglia, cimitero, mano, grimorio, esilio): si apre la ricerca e la carta va direttamente lì.',
   logPass: '{p} passa priorità.',
   logGraveyard: '{card} va nel cimitero di {p}.',
   logExile: '{card} ({p}) viene esiliata.',

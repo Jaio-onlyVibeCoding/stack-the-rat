@@ -19,7 +19,7 @@ function Section({ title, open, onToggle, children }: { title: string; open: boo
 /** Finestra di aiuto: lancio di magie e abilità, APNAP, combattimento, link alle regole. */
 export function Help({ onClose, onExamples }: { onClose: () => void; onExamples?: () => void }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState<Record<string, boolean>>({ cast: false, apnap: false, combat: false, layers: false });
+  const [open, setOpen] = useState<Record<string, boolean>>({ add: false, cast: false, apnap: false, combat: false, layers: false });
   const toggle = (k: string) => setOpen({ ...open, [k]: !open[k] });
   const steps = (k: Key) => t(k).split('|');
   const letters = 'abcdefghi';
@@ -32,6 +32,13 @@ export function Help({ onClose, onExamples }: { onClose: () => void; onExamples?
         </button>
       </div>
       <div class="help-body">
+        <Section title={t('helpAdd')} open={open.add} onToggle={() => toggle('add')}>
+          <ul>
+            {steps('helpAddSteps').map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ul>
+        </Section>
         <Section title={`${t('helpCast')} · ${t('helpAbility')}`} open={open.cast} onToggle={() => toggle('cast')}>
           <h3>{t('helpCast')}</h3>
           <ol>
