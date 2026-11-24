@@ -92,6 +92,16 @@ const MUTATE = 'M12 3l8 4-8 4-8-4zM4 12l8 4 8-4M4 17l8 4 8-4';
 const COUNTER = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v8M8 12h8';
 const LOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11';
 const UNLOCK = 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 6.8-1.2';
+/** Segnalini parola chiave (CR 122.1b): presenti o no, mostrati come icona */
+const KEYWORD_COUNTERS: { en: string; it: string; d: string }[] = [
+  { en: 'Flying', it: 'Volare', d: 'M3 14c5-1 8-4 10-10 1 4 0 8-3 11 3 0 6-1 9-3-2 4-6 7-11 7-2 0-4-2-5-5z' },
+  { en: 'Deathtouch', it: 'Tocco letale', d: 'M12 3a7 7 0 0 0-7 7c0 2.5 1.2 4 3 5v3h8v-3c1.8-1 3-2.5 3-5a7 7 0 0 0-7-7zM9 11h.01M15 11h.01M10 21v-3M14 21v-3' },
+  { en: 'Trample', it: 'Travolgere', d: 'M4 18l6-6-6-6M12 18l6-6-6-6' },
+  { en: 'Shield', it: 'Scudo', d: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z' },
+  { en: 'First strike', it: 'Attacco improvviso', d: 'M20 4L9 15M14 4h6v6M6 14l4 4M4 20l3-3' },
+  { en: 'Double strike', it: 'Doppio attacco', d: 'M20 4L9 15M14 4h6v6M6 14l4 4M4 20l3-3M4 4l11 11M4 4h6M4 4v6M18 14l-4 4M20 20l-3-3' },
+];
+const keywordCounter = (name: string) => KEYWORD_COUNTERS.find((k) => k.en === name || k.it === name);
 const LAYERS = 'M12 3 2 8l10 5 10-5-10-5zM2 12l10 5 10-5M2 16l10 5 10-5';
 const QUESTION = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01';
 const RESET = 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5';
@@ -1318,11 +1328,25 @@ export function App() {
       )}
       {o.counters && Object.keys(o.counters).length > 0 && (
         <span class="counters">
-          {Object.entries(o.counters).map(([k, v]) => (
-            <b key={k}>
-              {k} ×{v}
-            </b>
-          ))}
+          {Object.entries(o.counters).some(([k]) => keywordCounter(k)) && (
+            <span class="kw-counters">
+              {Object.keys(o.counters)
+                .map((k) => [k, keywordCounter(k)] as const)
+                .filter(([, kw]) => kw)
+                .map(([k, kw]) => (
+                  <i key={k} title={k} aria-label={k}>
+                    <Icon d={kw!.d} size={12} />
+                  </i>
+                ))}
+            </span>
+          )}
+          {Object.entries(o.counters)
+            .filter(([k]) => !keywordCounter(k))
+            .map(([k, v]) => (
+              <b key={k}>
+                {k} ×{v}
+              </b>
+            ))}
         </span>
       )}
       {o.under?.length ? (
@@ -2621,7 +2645,18 @@ export function App() {
                         <button type="button" aria-label={`− ${n}`} onClick={() => changePlayerCounter(p, n, -1)} disabled={!v}>
                           −
                         </button>
-                        <b>{v}</b>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          class="counter-val"
+                          aria-label={n}
+                          value={v}
+                          onChange={(e) => {
+                            const nv = parseInt((e.target as HTMLInputElement).value, 10);
+                            if (!Number.isNaN(nv)) changePlayerCounter(p, n, Math.max(0, nv) - v);
+                          }}
+                        />
                         <button type="button" aria-label={`+ ${n}`} onClick={() => changePlayerCounter(p, n, 1)}>
                           +
                         </button>
@@ -2671,7 +2706,7 @@ export function App() {
         (() => {
           const co = g.objs.find((x) => x.uid === counterFor);
           if (!co) return null;
-          const names = [...new Set([...t('counterNames').split('|'), ...Object.keys(co.counters ?? {})])];
+          const names = [...new Set([...t('counterNames').split('|'), ...Object.keys(co.counters ?? {})])].filter((n) => !keywordCounter(n));
           return (
             <div class="sheet-backdrop" onClick={() => setCounterFor(null)}>
               <section class="sheet choices-sheet" onClick={(e) => e.stopPropagation()}>
@@ -2683,12 +2718,41 @@ export function App() {
                       <button type="button" aria-label={`− ${n}`} onClick={() => changeCounter(co, n, -1)} disabled={!co.counters?.[n]}>
                         −
                       </button>
-                      <b>{co.counters?.[n] ?? 0}</b>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        class="counter-val"
+                        aria-label={n}
+                        value={co.counters?.[n] ?? 0}
+                        onChange={(e) => {
+                          const v = parseInt((e.target as HTMLInputElement).value, 10);
+                          if (!Number.isNaN(v)) changeCounter(co, n, Math.max(0, v) - (co.counters?.[n] ?? 0));
+                        }}
+                      />
                       <button type="button" aria-label={`+ ${n}`} onClick={() => changeCounter(co, n, 1)}>
                         +
                       </button>
                     </div>
                   ))}
+                </div>
+                <p class="label">{t('keywordCounters')}</p>
+                <div class="kw-toggles">
+                  {KEYWORD_COUNTERS.map((kw) => {
+                    const name = lang === 'it' ? kw.it : kw.en;
+                    const key = Object.keys(co.counters ?? {}).find((k) => k === kw.en || k === kw.it);
+                    return (
+                      <button
+                        key={kw.en}
+                        type="button"
+                        class={`kw-toggle${key ? ' on' : ''}`}
+                        aria-pressed={!!key}
+                        onClick={() => changeCounter(co, key ?? name, key ? -(co.counters![key]) : 1)}
+                      >
+                        <Icon d={kw.d} size={16} /> {name}
+                      </button>
+                    );
+                  })}
                 </div>
                 <form
                   class="counter-custom"
